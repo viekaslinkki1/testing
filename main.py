@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # Load .env variables
 load_dotenv()
 RENDER_API_KEY = os.getenv("RENDER_API_KEY")
+RENDER_SUSPEND_URL = os.getenv("RENDER_SUSPEND_URL")
 
 app = FastAPI()
 
@@ -18,19 +19,29 @@ async def chat_endpoint(request: Request):
     # New: handle /selfdestroy command
     if message.strip() == "/selfdestroy":
         try:
-            render_url = "https://your-render-url.com/api/disable-chatroom"  # Change this to your real URL
             headers = {
                 "Authorization": f"Bearer {RENDER_API_KEY}",
                 "Content-Type": "application/json"
             }
-            response = requests.post(render_url, headers=headers, json={"reason": "selfdestroy command triggered"})
 
+            # Send POST request to Render.com to suspend the service
+            response = requests.post(RENDER_SUSPEND_URL, headers=headers)
+
+            # Log response for debugging
+            print(f"[INFO] Render API Response: {response.status_code} - {response.text}")
+
+            # Handle the response
             if response.status_code == 200:
-                return JSONResponse({"reply": "Chatroom will be disabled shortly."})
+                return JSONResponse({"reply": "💣 Chatroom will be disabled shortly."})
+            elif response.status_code == 401:
+                return JSONResponse({"reply": "🔒 Unauthorized! Check your API key."})
+            elif response.status_code == 404:
+                return JSONResponse({"reply": "❓ Service not found. Check the URL."})
             else:
-                return JSONResponse({"reply": f"Failed to disable chatroom: {response.status_code}"})
+                return JSONResponse({"reply": f"⚠️ Failed to disable chatroom: {response.status_code}"})
         except Exception as e:
-            return JSONResponse({"reply": f"Error sending disable request: {str(e)}"})
+            print(f"[ERROR] Exception during Render API call: {str(e)}")
+            return JSONResponse({"reply": f"❌ Error sending disable request: {str(e)}"})
 
     # Existing chat handling below
     return JSONResponse({"reply": f"Received message: {message}"})
