@@ -1,421 +1,147 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Simple Chat with Ban/Unban Commands</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0; padding: 0;
-      background: #f0f0f0;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #chat {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px;
-      background: #fff;
-      border-bottom: 1px solid #ccc;
-    }
-    #chat p {
-      margin: 5px 0;
-    }
-    #chat p.system {
-      color: #666;
-      font-style: italic;
-    }
-    #chat p.banned-notice {
-      color: red;
-      font-weight: bold;
-    }
-    #chat p span.username {
-      font-weight: bold;
-      margin-right: 5px;
-    }
-    #input-area {
-      display: flex;
-      padding: 10px;
-      background: #eee;
-      align-items: center;
-    }
-    #input-area input[type="text"] {
-      flex: 1;
-      padding: 8px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-    }
-    #input-area button {
-      margin-left: 8px;
-      padding: 8px 15px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    /* Dropdown Menu */
-    #menu {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      user-select: none;
-    }
-    #menu > button {
-      background: #007bff;
-      border: none;
-      color: white;
-      padding: 8px 12px;
-      cursor: pointer;
-      border-radius: 3px;
-      font-weight: bold;
-    }
-    #menu-list {
-      display: none;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      margin-top: 5px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-      width: 180px;
-      font-size: 14px;
-      color: #333;
-    }
-    #menu-list p {
-      margin: 8px 12px;
-      line-height: 1.4;
-      white-space: pre-line;
-    }
-    #menu.show #menu-list {
-      display: block;
-    }
-
-    /* Modal */
-    #modal-overlay {
-      position: fixed;
-      top:0; left:0; right:0; bottom:0;
-      background: rgba(0,0,0,0.5);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    #modal {
-      background: white;
-      padding: 20px;
-      border-radius: 5px;
-      width: 300px;
-      box-sizing: border-box;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-      text-align: center;
-    }
-    #modal h2 {
-      margin-top: 0;
-    }
-    #modal input[type="text"], #modal input[type="password"] {
-      width: 100%;
-      padding: 8px;
-      margin: 10px 0 15px 0;
-      font-size: 16px;
-      box-sizing: border-box;
-    }
-    #modal button {
-      padding: 8px 16px;
-      font-size: 16px;
-      cursor: pointer;
-      background: #007bff;
-      border: none;
-      color: white;
-      border-radius: 3px;
-    }
-    #modal-error {
-      color: red;
-      margin-bottom: 10px;
-      display: none;
-    }
-    /* User list inside modal */
-    #modal-user-list {
-      max-height: 150px;
-      overflow-y: auto;
-      margin: 10px 0;
-      border: 1px solid #ccc;
-      padding: 5px;
-      text-align: left;
-      cursor: pointer;
-    }
-    #modal-user-list div {
-      padding: 5px;
-      border-bottom: 1px solid #eee;
-    }
-    #modal-user-list div:hover {
-      background-color: #007bff;
-      color: white;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>Public Chat Room</title>
+    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #chat-container {
+            width: 80%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+        }
+        #messages {
+            flex: 3;
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+            border-right: 1px solid #ddd;
+            height: 500px;
+            overflow-y: auto;
+        }
+        #messages li {
+            padding: 10px;
+            border-bottom: 1px solid #f1f1f1;
+        }
+        #messages li:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+        #control-panel {
+            flex: 1;
+            padding: 10px;
+        }
+        #chat-form {
+            display: flex;
+        }
+        #message {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px 0 0 4px;
+        }
+        button {
+            padding: 0 20px;
+            background-color: #007bff;
+            border: none;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 0 4px 4px 0;
+        }
+        select {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
+    <div id="chat-container">
+        <ul id="messages"></ul>
+        <div id="control-panel">
+            <select id="commands">
+                <option value="" disabled selected>Select a command</option>
+                <option value="ban">/ban</option>
+                <option value="unban">/unban</option>
+            </select>
+            <input type="text" id="target-id" placeholder="Target ID">
+            <input type="password" id="admin-pass" placeholder="Admin Password">
+            <button onclick="executeCommand()">Execute</button>
+        </div>
+    </div>
 
-<div id="menu">
-  <button id="menu-btn">Commands ▼</button>
-  <div id="menu-list">
-    <p>/ban - Ban a user (requires password)</p>
-    <p>/unban - Unban a user (requires password)</p>
-  </div>
-</div>
+    <form id="chat-form">
+        <input id="message" autocomplete="off" placeholder="Type a message..." /><button>Send</button>
+    </form>
 
-<div id="chat" aria-live="polite" aria-atomic="false"></div>
+    <script>
+        const socket = io();
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('message');
+        
+        document.getElementById('chat-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (messageInput.value.trim()) {
+                socket.emit('send_message', { message: messageInput.value });
+                messageInput.value = '';
+            }
+        });
 
-<div id="input-area">
-  <input type="text" id="message-input" placeholder="Enter message or command..." aria-label="Chat message input" autocomplete="off" />
-  <button id="send-btn" aria-label="Send message">Send</button>
-</div>
+        socket.on('receive_message', data => {
+            const item = document.createElement('li');
+            item.textContent = `[${data.username}]: ${data.message}`;
+            item.setAttribute('data-id', data.id);
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+        });
 
-<div id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-desc">
-  <div id="modal">
-    <h2 id="modal-title"></h2>
-    <p id="modal-desc"></p>
-    <div id="modal-error" role="alert"></div>
-    <div id="modal-user-list" tabindex="0" aria-label="User selection list"></div>
-    <input type="text" id="modal-input" autocomplete="off" />
-    <button id="modal-btn">Submit</button>
-  </div>
-</div>
+        socket.on('messages_deleted', data => {
+            const deletedIds = data.deleted_ids;
+            deletedIds.forEach(id => {
+                const elem = document.querySelector(`#messages li[data-id='${id}']`);
+                if (elem) elem.remove();
+            });
+        });
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
-  const socket = io();
+        socket.on('banned_notification', () => {
+            alert('You have been banned.');
+            messages.innerHTML = ''; // Clear chat history
+        });
 
-  const chat = document.getElementById('chat');
-  const input = document.getElementById('message-input');
-  const sendBtn = document.getElementById('send-btn');
+        socket.on('unbanned_notification', () => {
+            alert('You have been unbanned.');
+        });
 
-  const modalOverlay = document.getElementById('modal-overlay');
-  const modalTitle = document.getElementById('modal-title');
-  const modalDesc = document.getElementById('modal-desc');
-  const modalError = document.getElementById('modal-error');
-  const modalUserList = document.getElementById('modal-user-list');
-  const modalInput = document.getElementById('modal-input');
-  const modalBtn = document.getElementById('modal-btn');
+        function executeCommand() {
+            const command = document.getElementById('commands').value;
+            const targetId = document.getElementById('target-id').value;
+            const password = document.getElementById('admin-pass').value;
 
-  const menuBtn = document.getElementById('menu-btn');
-  const menu = document.getElementById('menu');
+            if (!command || !targetId || !password) {
+                alert("All fields are required");
+                return;
+            }
 
-  let registered = false;
-  let userId = null;
-  let username = null;
-  let banned = false;
-
-  // State for modal commands
-  let selectedCommand = null;
-  let selectedUserId = null;
-
-  function addMessage(text, username=null, isSystem=false, bannedNotice=false) {
-    const p = document.createElement('p');
-    if (isSystem) {
-      p.classList.add('system');
-      p.textContent = text;
-    } else if (bannedNotice) {
-      p.classList.add('banned-notice');
-      p.textContent = text;
-    } else {
-      const spanUser = document.createElement('span');
-      spanUser.className = 'username';
-      spanUser.textContent = username + ':';
-      p.appendChild(spanUser);
-      p.appendChild(document.createTextNode(' ' + text));
-    }
-    chat.appendChild(p);
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  function showModal(title, desc, showUserList=false) {
-    modalTitle.textContent = title;
-    modalDesc.textContent = desc;
-    modalError.style.display = 'none';
-    modalError.textContent = '';
-    modalInput.value = '';
-    modalInput.style.display = showUserList ? 'none' : 'block';
-    modalUserList.style.display = showUserList ? 'block' : 'none';
-    modalOverlay.style.display = 'flex';
-    if (showUserList) {
-      modalUserList.focus();
-    } else {
-      modalInput.focus();
-    }
-  }
-
-  function hideModal() {
-    modalOverlay.style.display = 'none';
-    modalError.style.display = 'none';
-    modalError.textContent = '';
-    modalInput.value = '';
-    modalUserList.innerHTML = '';
-    selectedUserId = null;
-    selectedCommand = null;
-  }
-
-  // Register prompt on load
-  function promptRegister() {
-    showModal('Register', 'Enter your real name to join the chat:', false);
-    modalBtn.onclick = () => {
-      const val = modalInput.value.trim();
-      if (val.length === 0) {
-        modalError.textContent = 'Name cannot be empty';
-        modalError.style.display = 'block';
-        return;
-      }
-      username = val;
-      socket.emit('register_user', { username: val });
-    };
-  }
-
-  // Dropdown menu toggle
-  menuBtn.addEventListener('click', () => {
-    menu.classList.toggle('show');
-  });
-
-  // Hide dropdown if clicked outside
-  document.addEventListener('click', e => {
-    if (!menu.contains(e.target)) {
-      menu.classList.remove('show');
-    }
-  });
-
-  // Send message handler
-  function sendMessage() {
-    if (!registered) {
-      alert('Please register first by entering your real name.');
-      return;
-    }
-    if (banned) {
-      alert('You are banned from sending messages.');
-      return;
-    }
-    const msg = input.value.trim();
-    if (msg.length === 0) return;
-
-    if (msg === '/ban' || msg === '/unban') {
-      selectedCommand = msg.substring(1); // 'ban' or 'unban'
-      socket.emit('request_user_list', { command: selectedCommand });
-      showModal(`Select user to ${selectedCommand}`, `Click a user below to ${selectedCommand} them.`, true);
-      return;
-    }
-
-    socket.emit('send_message', { user_id: userId, username, message: msg });
-    input.value = '';
-  }
-
-  sendBtn.addEventListener('click', sendMessage);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
-  });
-
-  // Socket events
-
-  socket.on('registration_success', data => {
-    registered = true;
-    userId = data.user_id;
-    hideModal();
-    addMessage(`Welcome, ${username}!`, null, true);
-  });
-
-  socket.on('registration_failed', data => {
-    modalError.textContent = data.error || 'Registration failed.';
-    modalError.style.display = 'block';
-  });
-
-  socket.on('chat_message', data => {
-    addMessage(data.message, data.username);
-  });
-
-  socket.on('system_message', data => {
-    addMessage(data.message, null, true);
-  });
-
-  socket.on('ban_status', data => {
-    if (data.user_id === userId) {
-      banned = data.banned;
-      if (banned) {
-        addMessage('You have been banned and cannot send messages.', null, false, true);
-        input.disabled = true;
-        sendBtn.disabled = true;
-      } else {
-        addMessage('You have been unbanned and can send messages again.', null, true);
-        input.disabled = false;
-        sendBtn.disabled = false;
-      }
-    }
-  });
-
-  socket.on('user_list', data => {
-    if (!selectedCommand) return;
-    const users = data.users; // array of {user_id, username}
-
-    modalUserList.innerHTML = '';
-    users.forEach(user => {
-      if (user.user_id === userId) return; // Can't ban/unban self
-      const div = document.createElement('div');
-      div.textContent = user.username;
-      div.dataset.userid = user.user_id;
-      div.tabIndex = 0;
-      div.addEventListener('click', () => {
-        selectedUserId = div.dataset.userid;
-        modalUserList.style.display = 'none';
-        modalInput.type = 'password';
-        modalInput.style.display = 'block';
-        modalInput.value = '';
-        modalInput.placeholder = 'Enter admin password';
-        modalInput.focus();
-        modalDesc.textContent = `Enter password to confirm ${selectedCommand} for user: ${div.textContent}`;
-        modalBtn.textContent = 'Confirm';
-      });
-      modalUserList.appendChild(div);
-    });
-  });
-
-  modalBtn.onclick = () => {
-    if (modalUserList.style.display === 'block') {
-      // waiting for user selection
-      modalError.textContent = 'Please select a user first.';
-      modalError.style.display = 'block';
-      return;
-    }
-    if (selectedUserId && selectedCommand) {
-      const pwd = modalInput.value.trim();
-      if (pwd.length === 0) {
-        modalError.textContent = 'Password cannot be empty';
-        modalError.style.display = 'block';
-        return;
-      }
-      if (selectedCommand === 'ban') {
-        socket.emit('ban_user', { user_id: selectedUserId, password: pwd });
-      } else if (selectedCommand === 'unban') {
-        socket.emit('unban_user', { user_id: selectedUserId, password: pwd });
-      }
-      modalError.style.display = 'none';
-      hideModal();
-      selectedUserId = null;
-      selectedCommand = null;
-    }
-  };
-
-  // On connect, prompt registration
-  socket.on('connect', () => {
-    if (!registered) promptRegister();
-  });
-
-  // If disconnected, reset
-  socket.on('disconnect', () => {
-    registered = false;
-    userId = null;
-    username = null;
-    banned = false;
-    input.disabled = false;
-    sendBtn.disabled = false;
-  });
-
-</script>
+            socket.emit('ban_unban_flow', {
+                command: command,
+                arg: targetId,
+                password: password
+            });
+        }
+    </script>
 </body>
 </html>
