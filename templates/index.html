@@ -47,6 +47,19 @@
     }
     #chat-form {
       display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    #username {
+      width: 120px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+    }
+    #username:focus {
+      border-color: #007bff;
     }
     #message {
       flex-grow: 1;
@@ -68,6 +81,7 @@
       cursor: pointer;
       border-radius: 0 4px 4px 0;
       transition: background-color 0.3s;
+      height: 42px;
     }
     button:hover {
       background-color: #0056b3;
@@ -135,6 +149,12 @@
       <form id="chat-form">
         <input
           type="text"
+          id="username"
+          placeholder="Your name (default: anom)"
+          autocomplete="off"
+        />
+        <input
+          type="text"
           id="message"
           placeholder="Type a message"
           required
@@ -154,7 +174,7 @@
           <em>Example:</em> <code>/deletemessage 12</code> deletes the last 12 messages.
         </div>
       </div>
-      <!-- You can add more dropdowns here, e.g. Info, Settings, etc -->
+      <!-- Add more dropdowns here if needed -->
     </div>
   </div>
 
@@ -162,10 +182,12 @@
     const socket = io();
     const form = document.getElementById('chat-form');
     const messages = document.getElementById('messages');
+    const usernameInput = document.getElementById('username');
+    const messageInput = document.getElementById('message');
 
     form.addEventListener('submit', e => {
       e.preventDefault();
-      const messageInput = document.getElementById('message');
+      const username = usernameInput.value.trim() || 'anom';
       const message = messageInput.value.trim();
       if (message === '') return;
 
@@ -175,7 +197,7 @@
         const amount = parseInt(deleteCmdMatch[1], 10);
         socket.emit('delete_messages', { amount });
       } else {
-        socket.emit('send_message', { username: 'anom', message: message });
+        socket.emit('send_message', { username: username, message: message });
       }
 
       messageInput.value = '';
