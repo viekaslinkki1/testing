@@ -1,94 +1,17 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
+import os
 
 app = FastAPI()
 
-# Serve static HTML file (frontend)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount frontend folder as static files at /frontend (for CSS, JS if needed)
+app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 
-html = """
-<!DOCTYPE html>
-<html>
-<head>
-  <title>WebSocket Chat</title>
-  <style>
-    #messages {
-      width: 400px; height: 300px;
-      border: 1px solid #ccc;
-      overflow-y: auto;
-      padding: 10px;
-      margin-bottom: 10px;
-      font-family: monospace;
-      background: #f9f9f9;
-    }
-    #input {
-      width: 300px;
-      padding: 5px;
-    }
-    #sendBtn {
-      padding: 5px 10px;
-    }
-  </style>
-</head>
-<body>
-  <h3>WebSocket Chat</h3>
-  <div id="messages"></div>
-  <input id="input" type="text" autocomplete="off" placeholder="Type message..." />
-  <button id="sendBtn">Send</button>
-
-  <script>
-    const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    const ws = new WebSocket(`${wsProtocol}${window.location.host}/ws/chat`);
-
-    const messagesDiv = document.getElementById("messages");
-    const input = document.getElementById("input");
-    const sendBtn = document.getElementById("sendBtn");
-
-    ws.onmessage = (event) => {
-      const newMessage = document.createElement("div");
-      newMessage.textContent = event.data;
-      messagesDiv.appendChild(newMessage);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    };
-
-    ws.onerror = (event) => {
-      console.error("WebSocket error:", event);
-      const errorMessage = document.createElement("div");
-      errorMessage.textContent = "⚠️ Connection Error.";
-      errorMessage.style.color = "red";
-      messagesDiv.appendChild(errorMessage);
-    };
-
-    ws.onclose = () => {
-      console.warn("WebSocket connection closed.");
-      const closedMessage = document.createElement("div");
-      closedMessage.textContent = "🔒 Connection closed.";
-      closedMessage.style.color = "orange";
-      messagesDiv.appendChild(closedMessage);
-    };
-
-    sendBtn.onclick = () => {
-      const msg = input.value.trim();
-      if (msg !== "") {
-        ws.send(msg);
-        input.value = '';
-      }
-    };
-
-    input.addEventListener("keyup", (e) => {
-      if (e.key === "Enter") {
-        sendBtn.click();
-      }
-    });
-  </script>
-</body>
-</html>
-"""
-
+# Serve the index.html on root path
 @app.get("/")
 async def get():
-    return HTMLResponse(html)
+    return FileResponse(os.path.join("frontend", "index.html"))
 
 class ConnectionManager:
     def __init__(self):
