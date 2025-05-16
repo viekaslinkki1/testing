@@ -39,8 +39,8 @@
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
 
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${protocol}://${window.location.host}/ws/chat`);
+  // Connect to WebSocket endpoint using WSS (Secure)
+  const ws = new WebSocket(`wss://${window.location.host}/ws/chat`);
 
   ws.onmessage = (event) => {
     messagesDiv.textContent += event.data + '\n';
@@ -60,6 +60,14 @@
       sendBtn.click();
     }
   });
+
+  ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+  };
+
+  ws.onclose = () => {
+    console.warn("WebSocket connection closed.");
+  };
 </script>
 
 </body>
