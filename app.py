@@ -1,10 +1,14 @@
+import os
+import uuid
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
-import uuid
+import eventlet
+
+eventlet.monkey_patch()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='eventlet')
 
 # Store users: { sid: { 'id': uuid, 'real_name': str, 'banned': bool } }
 users = {}
@@ -33,7 +37,7 @@ def handle_register_user(data):
     if not real_name:
         emit('register_response', {'success': False, 'error': 'Name cannot be empty'})
         return
-    
+
     # Generate unique user ID (UUID4 shortened)
     user_id = str(uuid.uuid4())[:8]
 
@@ -138,4 +142,6 @@ def on_disconnect():
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    # Run using eventlet's WSGI server, binding to 0.0.0.0 and environment PORT
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
