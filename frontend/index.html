@@ -39,8 +39,9 @@
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
 
-  // Connect to WebSocket endpoint using WSS (Secure)
-  const ws = new WebSocket(`wss://${window.location.host}/ws/chat`);
+  // Use secure WebSocket if on HTTPS, otherwise plain WS
+  const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+  const ws = new WebSocket(`${wsProtocol}${window.location.host}/ws/chat`);
 
   ws.onmessage = (event) => {
     messagesDiv.textContent += event.data + '\n';
