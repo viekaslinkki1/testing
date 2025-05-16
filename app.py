@@ -1,68 +1,141 @@
-import os
-import sqlite3
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
-import eventlet
-eventlet.monkey_patch()
+import uuid
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret'
+app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app)
 
-DB_FILE = 'chat.db'
+# Store users: { sid: { 'id': uuid, 'real_name': str, 'banned': bool } }
+users = {}
 
-def init_db():
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            username TEXT, 
-            message TEXT
-        )''')
-        conn.commit()
+# Store banned user_ids here
+banned_ids = set()
+
+# Message storage with incremental ID
+messages = []
+next_msg_id = 1
+
+# Admin password for ban/unban
+ADMIN_PASSWORD = "100005"
+
 
 @app.route('/')
 def index():
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        # Select id too to track messages for deletion
-        c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-        messages = c.fetchall()[::-1]  # Reverse to show oldest first
+    # Pass messages to template for initial load
     return render_template('index.html', messages=messages)
 
+
+@socketio.on('register_user')
+def handle_register_user(data):
+    sid = request.sid
+    real_name = data.get('real_name', '').strip()
+    if not real_name:
+        emit('register_response', {'success': False, 'error': 'Name cannot be empty'})
+        return
+    
+    # Generate unique user ID (UUID4 shortened)
+    user_id = str(uuid.uuid4())[:8]
+
+    # Save user info
+    users[sid] = {'id': user_id, 'real_name': real_name, 'banned': False}
+
+    emit('register_response', {'success': True, 'user_id': user_id, 'real_name': real_name})
+    print(f"User registered: {real_name} with ID {user_id}")
+
+
 @socketio.on('send_message')
-def handle_send(data):
-    username = "anom"
-    message = data.get('message')
+def handle_send_message(data):
+    sid = request.sid
+    if sid not in users:
+        emit('error_message', {'error': 'You must register your real name first.'})
+        return
 
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
-        message_id = c.lastrowid
-        conn.commit()
+    if users[sid]['banned']:
+        emit('error_message', {'error': 'You are banned and cannot send messages.'})
+        return
 
-    # Send back the inserted message with its DB id
-    emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
+    global next_msg_id
+    username = data.get('username', 'anom')
+    message = data.get('message', '').strip()
 
-@socketio.on('delete_messages')
-def handle_delete_messages(data):
-    amount = data.get('amount', 0)
-    if not isinstance(amount, int) or amount <= 0:
-        return  # Ignore invalid inputs
+    if not message:
+        return
 
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT ?", (amount,))
-        rows = c.fetchall()
-        ids_to_delete = [row[0] for row in rows]
+    msg_id = next_msg_id
+    next_msg_id += 1
 
-        if ids_to_delete:
-            c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids_to_delete))})", ids_to_delete)
-            conn.commit()
+    messages.append((msg_id, username, message))
 
-    # Notify all clients to remove these messages
-    emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
+    emit('receive_message', {'id': msg_id, 'username': username, 'message': message}, broadcast=True)
+
+
+@socketio.on('ban_unban_flow')
+def handle_ban_unban(data):
+    sid = request.sid
+    command = data.get('command')  # 'ban' or 'unban'
+    arg = data.get('arg')          # user_id or None
+    password = data.get('password')  # password or None
+
+    # Check if user is registered
+    if sid not in users:
+        emit('error_message', {'error': 'You must register your real name first.'})
+        return
+
+    # Check command validity
+    if command not in ('ban', 'unban'):
+        emit('error_message', {'error': 'Invalid command.'})
+        return
+
+    # Step 1: If no arg, send back user list
+    if arg is None:
+        # List all users with ID and real name
+        user_list = [{'user_id': u['id'], 'real_name': u['real_name'], 'banned': u['banned']} for u in users.values()]
+        emit('user_list', {'command': command, 'users': user_list})
+        return
+
+    # Step 2: If arg given, but no password -> ask for password
+    if password is None:
+        emit('request_password', {'command': command, 'user_id': arg})
+        return
+
+    # Step 3: Check password
+    if password != ADMIN_PASSWORD:
+        emit('error_message', {'error': 'Incorrect password.'})
+        return
+
+    # Step 4: Ban or unban user by user_id
+    target_user_id = arg
+    target_sid = None
+    for s, u in users.items():
+        if u['id'] == target_user_id:
+            target_sid = s
+            break
+
+    if target_sid is None:
+        emit('error_message', {'error': f'User ID {target_user_id} not found.'})
+        return
+
+    if command == 'ban':
+        users[target_sid]['banned'] = True
+        banned_ids.add(target_user_id)
+        emit('success_message', {'message': f"User {users[target_sid]['real_name']} (ID: {target_user_id}) banned."})
+        # Optionally notify banned user
+        socketio.emit('banned_notification', {'message': 'You have been banned.'}, to=target_sid)
+    else:
+        users[target_sid]['banned'] = False
+        banned_ids.discard(target_user_id)
+        emit('success_message', {'message': f"User {users[target_sid]['real_name']} (ID: {target_user_id}) unbanned."})
+        socketio.emit('unbanned_notification', {'message': 'You have been unbanned.'}, to=target_sid)
+
+
+@socketio.on('disconnect')
+def on_disconnect():
+    sid = request.sid
+    if sid in users:
+        print(f"User disconnected: {users[sid]['real_name']} ({users[sid]['id']})")
+        del users[sid]
+
 
 if __name__ == '__main__':
-    init_db()
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    socketio.run(app, debug=True)
