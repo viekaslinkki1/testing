@@ -1,21 +1,95 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import uvicorn
-import os
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
-# Serve static frontend files
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+# Serve static HTML file (frontend)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve the main HTML page
+html = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Chat</title>
+  <style>
+    #messages {
+      width: 400px; height: 300px;
+      border: 1px solid #ccc;
+      overflow-y: auto;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-family: monospace;
+      background: #f9f9f9;
+    }
+    #input {
+      width: 300px;
+      padding: 5px;
+    }
+    #sendBtn {
+      padding: 5px 10px;
+    }
+  </style>
+</head>
+<body>
+  <h3>WebSocket Chat</h3>
+  <div id="messages"></div>
+  <input id="input" type="text" autocomplete="off" placeholder="Type message..." />
+  <button id="sendBtn">Send</button>
+
+  <script>
+    const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    const ws = new WebSocket(`${wsProtocol}${window.location.host}/ws/chat`);
+
+    const messagesDiv = document.getElementById("messages");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("sendBtn");
+
+    ws.onmessage = (event) => {
+      const newMessage = document.createElement("div");
+      newMessage.textContent = event.data;
+      messagesDiv.appendChild(newMessage);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    };
+
+    ws.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      const errorMessage = document.createElement("div");
+      errorMessage.textContent = "⚠️ Connection Error.";
+      errorMessage.style.color = "red";
+      messagesDiv.appendChild(errorMessage);
+    };
+
+    ws.onclose = () => {
+      console.warn("WebSocket connection closed.");
+      const closedMessage = document.createElement("div");
+      closedMessage.textContent = "🔒 Connection closed.";
+      closedMessage.style.color = "orange";
+      messagesDiv.appendChild(closedMessage);
+    };
+
+    sendBtn.onclick = () => {
+      const msg = input.value.trim();
+      if (msg !== "") {
+        ws.send(msg);
+        input.value = '';
+      }
+    };
+
+    input.addEventListener("keyup", (e) => {
+      if (e.key === "Enter") {
+        sendBtn.click();
+      }
+    });
+  </script>
+</body>
+</html>
+"""
+
 @app.get("/")
-def read_index():
-    return FileResponse("frontend/index.html")
+async def get():
+    return HTMLResponse(html)
 
-
-# Store active WebSocket connections
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -25,43 +99,20 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+        self.active_connections.remove(websocket)
 
-    async def send_message(self, message: str):
+    async def broadcast(self, message: str):
         for connection in self.active_connections:
             await connection.send_text(message)
 
-
 manager = ConnectionManager()
 
-
-# Save message to a file
-def save_message(message: str):
-    with open("messages.txt", "a") as file:
-        file.write(message + "\n")
-
-
-# WebSocket endpoint
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send all previous messages to the new connection
-        if os.path.exists("messages.txt"):
-            with open("messages.txt", "r") as file:
-                for line in file:
-                    await websocket.send_text(line.strip())
-
         while True:
             data = await websocket.receive_text()
-            save_message(data)
-            await manager.send_message(data)
-
+            await manager.broadcast(f"User: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
