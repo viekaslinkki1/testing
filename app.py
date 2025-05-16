@@ -29,7 +29,8 @@ def index():
 @socketio.on('connect')
 def handle_connect():
     sid = request.sid
-    user_id = str(uuid.uuid4())[:8]  # Generate unique ID
+    # Use IP address as user ID (replacing dots with hyphens)
+    user_id = request.remote_addr.replace('.', '-')
     users[sid] = {'id': user_id, 'banned': False}
     print(f"User connected with ID {user_id}")
 
@@ -46,7 +47,7 @@ def handle_send_message(data):
         return
 
     global next_msg_id
-    username = users[sid]['id']  # Username is now the user ID
+    username = users[sid]['id']
     message = data.get('message', '').strip()
 
     if not message:
