@@ -70,8 +70,8 @@
   <div id="chat-container">
     <h2>Public Chat Room</h2>
     <ul id="messages">
-      {% for username, message in messages %}
-        <li><strong>{{ username }}</strong>: {{ message }}</li>
+      {% for id, username, message in messages %}
+        <li data-id="{{ id }}"><strong>{{ username }}</strong>: {{ message }}</li>
       {% endfor %}
     </ul>
     <form id="chat-form">
@@ -98,7 +98,14 @@
       const message = messageInput.value.trim();
       if (message === '') return;
 
-      socket.emit('send_message', { username: 'anom', message: message });
+      // Check for /deletemessage command
+      const deleteCmdMatch = message.match(/^\/deletemessage (\d+)$/);
+      if (deleteCmdMatch) {
+        const amount = parseInt(deleteCmdMatch[1], 10);
+        socket.emit('delete_messages', { amount });
+      } else {
+        socket.emit('send_message', { username: 'anom', message: message });
+      }
 
       messageInput.value = '';
       messageInput.focus();
@@ -106,9 +113,18 @@
 
     socket.on('receive_message', data => {
       const item = document.createElement('li');
+      item.setAttribute('data-id', data.id);
       item.innerHTML = `<strong>${data.username}</strong>: ${data.message}`;
       messages.appendChild(item);
       messages.scrollTop = messages.scrollHeight;  // auto-scroll
+    });
+
+    socket.on('messages_deleted', data => {
+      const deletedIds = data.deleted_ids;
+      deletedIds.forEach(id => {
+        const elem = document.querySelector(`#messages li[data-id='${id}']`);
+        if (elem) elem.remove();
+      });
     });
   </script>
 </body>
