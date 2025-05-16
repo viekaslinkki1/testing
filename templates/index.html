@@ -10,23 +10,16 @@
       background: #f4f4f4;
     }
     #chat-container {
-      max-width: 700px; /* wider for dropdown */
+      max-width: 700px;
       margin: 0 auto;
       background: white;
       border-radius: 8px;
       padding: 20px;
       box-shadow: 0 0 8px rgba(0,0,0,0.1);
       display: flex;
-      flex-direction: row; /* horizontal layout */
+      flex-direction: column;
       height: 80vh;
       position: relative;
-    }
-    #chat-main {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-      margin-right: 20px;
-      height: 100%;
     }
     #messages {
       flex-grow: 1;
@@ -47,7 +40,7 @@
     }
     #chat-form {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
     }
     #username {
@@ -66,7 +59,7 @@
       padding: 10px;
       font-size: 16px;
       border: 1px solid #ccc;
-      border-radius: 4px 0 0 4px;
+      border-radius: 4px;
       outline: none;
     }
     #message:focus {
@@ -79,103 +72,105 @@
       color: white;
       font-weight: bold;
       cursor: pointer;
-      border-radius: 0 4px 4px 0;
+      border-radius: 4px;
       transition: background-color 0.3s;
-      height: 42px;
+      height: 40px;
     }
     button:hover {
       background-color: #0056b3;
     }
 
-    /* Dropdown container on right side */
-    #dropdown-container {
-      width: 200px;
-      border-left: 1px solid #ddd;
-      padding-left: 15px;
-      height: 100%;
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Dropdown menu styling */
+    /* Dropdown menu styles */
     .dropdown {
-      position: relative;
-      margin-bottom: 20px;
+      position: absolute;
+      top: 20px;
+      right: 20px;
       user-select: none;
     }
-    .dropdown-label {
-      font-weight: bold;
-      cursor: pointer;
+    .dropdown > button {
       background-color: #007bff;
       color: white;
-      padding: 10px;
-      border-radius: 6px;
-      text-align: center;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+      transition: background-color 0.3s;
     }
-
+    .dropdown > button:hover {
+      background-color: #0056b3;
+    }
     .dropdown-content {
       display: none;
       position: absolute;
-      top: 40px;
       right: 0;
       background-color: white;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      padding: 10px;
-      width: 220px;
+      min-width: 220px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      border-radius: 4px;
+      padding: 12px 16px;
       z-index: 1000;
       font-size: 14px;
       color: #333;
-      line-height: 1.4;
     }
-
-    /* Show dropdown content when hovering over label */
-    .dropdown:hover .dropdown-content {
+    .dropdown.show .dropdown-content {
       display: block;
+    }
+    .dropdown-content h4 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-weight: bold;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 4px;
+    }
+    .dropdown-content p {
+      margin: 6px 0;
+      font-family: monospace;
+      background: #f0f0f0;
+      padding: 6px 8px;
+      border-radius: 3px;
+      user-select: text;
     }
   </style>
 </head>
 <body>
   <div id="chat-container">
-    <div id="chat-main">
-      <h2>Public Chat Room</h2>
-      <ul id="messages">
-        {% for id, username, message in messages %}
-          <li data-id="{{ id }}"><strong>{{ username }}</strong>: {{ message }}</li>
-        {% endfor %}
-      </ul>
-      <form id="chat-form">
-        <input
-          type="text"
-          id="username"
-          placeholder="Your name (default: anom)"
-          autocomplete="off"
-        />
-        <input
-          type="text"
-          id="message"
-          placeholder="Type a message"
-          required
-          autocomplete="off"
-          autofocus
-        />
-        <button type="submit">Send</button>
-      </form>
+    <h2>Public Chat Room</h2>
+
+    <!-- Dropdown menu -->
+    <div class="dropdown" id="dropdown">
+      <button id="dropdown-btn">Menu ▼</button>
+      <div class="dropdown-content">
+        <h4>Security</h4>
+        <p><code>/deletemessage &lt;number&gt;</code> - Delete last &lt;number&gt; messages</p>
+        <!-- You can add more commands or info here -->
+      </div>
     </div>
 
-    <div id="dropdown-container">
-      <div class="dropdown">
-        <div class="dropdown-label">Security</div>
-        <div class="dropdown-content">
-          <strong>/deletemessage &lt;amount&gt;</strong><br>
-          Deletes the specified number of most recent messages.<br>
-          <em>Example:</em> <code>/deletemessage 12</code> deletes the last 12 messages.
-        </div>
-      </div>
-      <!-- Add more dropdowns here if needed -->
-    </div>
+    <ul id="messages">
+      {% for id, username, message in messages %}
+        <li data-id="{{ id }}"><strong>{{ username }}</strong>: {{ message }}</li>
+      {% endfor %}
+    </ul>
+    <form id="chat-form">
+      <input
+        type="text"
+        id="username"
+        placeholder="Your name (optional)"
+        maxlength="20"
+        autocomplete="off"
+      />
+      <input
+        type="text"
+        id="message"
+        placeholder="Type a message"
+        required
+        autocomplete="off"
+        autofocus
+      />
+      <button type="submit">Send</button>
+    </form>
   </div>
 
   <script>
@@ -183,21 +178,43 @@
     const form = document.getElementById('chat-form');
     const messages = document.getElementById('messages');
     const usernameInput = document.getElementById('username');
-    const messageInput = document.getElementById('message');
+
+    // Dropdown menu toggle
+    const dropdown = document.getElementById('dropdown');
+    const dropdownBtn = document.getElementById('dropdown-btn');
+    dropdownBtn.addEventListener('click', () => {
+      dropdown.classList.toggle('show');
+    });
+
+    // Close dropdown if clicked outside
+    window.addEventListener('click', (e) => {
+      if (!dropdown.contains(e.target)) {
+        dropdown.classList.remove('show');
+      }
+    });
+
+    // Scroll to bottom function
+    function scrollToBottom() {
+      messages.scrollTop = messages.scrollHeight;
+    }
 
     form.addEventListener('submit', e => {
       e.preventDefault();
-      const username = usernameInput.value.trim() || 'anom';
-      const message = messageInput.value.trim();
+      const messageInput = document.getElementById('message');
+      let message = messageInput.value.trim();
       if (message === '') return;
+
+      // Get username or default "anom"
+      let username = usernameInput.value.trim();
+      if (!username) username = 'anom';
 
       // Check for /deletemessage command
       const deleteCmdMatch = message.match(/^\/deletemessage (\d+)$/);
       if (deleteCmdMatch) {
         const amount = parseInt(deleteCmdMatch[1], 10);
-        socket.emit('delete_messages', { amount });
+        socket.emit('delete_messages', { amount, username });
       } else {
-        socket.emit('send_message', { username: username, message: message });
+        socket.emit('send_message', { username, message });
       }
 
       messageInput.value = '';
@@ -209,7 +226,7 @@
       item.setAttribute('data-id', data.id);
       item.innerHTML = `<strong>${data.username}</strong>: ${data.message}`;
       messages.appendChild(item);
-      messages.scrollTop = messages.scrollHeight;  // auto-scroll
+      scrollToBottom();
     });
 
     socket.on('messages_deleted', data => {
@@ -218,6 +235,13 @@
         const elem = document.querySelector(`#messages li[data-id='${id}']`);
         if (elem) elem.remove();
       });
+    });
+
+    // Scroll to bottom on tab focus (fix for inactive tab issue)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        scrollToBottom();
+      }
     });
   </script>
 </body>
