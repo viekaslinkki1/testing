@@ -1,4 +1,4 @@
-""import os
+import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit
@@ -104,4 +104,3 @@ def handle_delete_messages(data):
 if __name__ == '__main__':
     init_db()
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-    ""
