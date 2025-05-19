@@ -37,6 +37,13 @@ def password_protect():
             return redirect(url_for('index'))
     return render_template('login.html')
 
+@app.route('/roulette')
+def roulette():
+    if not session.get('authenticated'):
+        return redirect(url_for('login'))
+    return render_template('roulette.html')
+
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
