@@ -1,100 +1,64 @@
-import os
+from flask import Flask, render_template, session, request, jsonify, redirect, url_for
 import sqlite3
-from flask import Flask, render_template, request, session, jsonify
-from flask_socketio import SocketIO
-import eventlet
-from datetime import datetime, timedelta
-
-eventlet.monkey_patch()
+import os
+import random
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret'
-socketio = SocketIO(app)
+app.secret_key = 'supersecretkey'
 
-DB_FILE = 'chat.db'
-COIN_AMOUNT = 2000
-CLAIM_INTERVAL = timedelta(hours=12)
+DB_FILE = 'users.db'
 
-
+# Initialize DB and create users table if not exists
 def init_db():
-    try:
+    if not os.path.exists(DB_FILE):
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute('''
-                CREATE TABLE IF NOT EXISTS messages (
+                CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT NOT NULL DEFAULT 'anom',
-                    message TEXT NOT NULL
+                    username TEXT UNIQUE,
+                    coins INTEGER DEFAULT 2000
                 )
             ''')
-            c.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY,
-                    coins INTEGER DEFAULT 0,
-                    last_claim TIMESTAMP DEFAULT (DATETIME('now', '-1 day'))
-                )
-            ''')
+            # Create a default user for testing
+            c.execute("INSERT INTO users (username, coins) VALUES (?, ?)", ('testuser', 2000))
             conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database initialization error: {e}")
 
-
-# Run this once at import to make sure tables exist
 init_db()
 
+# Simple login for demo
+@app.route('/login')
+def login():
+    session['username'] = 'testuser'
+    return redirect(url_for('games'))
 
-@app.route('/')
-def index():
-    # Just a simple landing page or redirect to games for testing
-    return "Welcome! Go to /games"
-
-
+# Show Plinko game page
 @app.route('/games')
 def games():
-    username = session.get('username', 'anom')
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT coins FROM users WHERE username = ?", (username,))
-            result = c.fetchone()
-            coins = result[0] if result else 0
-        return render_template('games.html', coins=coins)
-    except sqlite3.Error as e:
-        return f"Database error: {e}", 500
+    username = session.get('username')
+    if not username:
+        return redirect(url_for('login'))
 
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT coins FROM users WHERE username = ?", (username,))
+        row = c.fetchone()
+        coins = row[0] if row else 0
 
-@app.route('/claim', methods=['POST'])
-def claim_coins():
-    username = session.get('username', 'anom')
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT coins, last_claim FROM users WHERE username = ?", (username,))
-            result = c.fetchone()
+    return render_template('games.html', coins=coins)
 
-            now = datetime.now()
-            if result:
-                last_claim = datetime.strptime(result[1], '%Y-%m-%d %H:%M:%S')
-                if now - last_claim >= CLAIM_INTERVAL:
-                    new_balance = result[0] + COIN_AMOUNT
-                    c.execute("UPDATE users SET coins = ?, last_claim = ? WHERE username = ?",
-                              (new_balance, now.strftime('%Y-%m-%d %H:%M:%S'), username))
-                    conn.commit()
-                    return jsonify({"status": "success", "new_balance": new_balance})
-                else:
-                    return jsonify({"status": "error", "message": "Too soon to claim again!"})
-            else:
-                c.execute("INSERT INTO users (username, coins, last_claim) VALUES (?, ?, ?)",
-                          (username, COIN_AMOUNT, now.strftime('%Y-%m-%d %H:%M:%S')))
-                conn.commit()
-                return jsonify({"status": "success", "new_balance": COIN_AMOUNT})
-    except sqlite3.Error as e:
-        return jsonify({"status": "error", "message": f"Database error: {e}"})
-
-
+# Play Plinko
 @app.route('/plinko', methods=['POST'])
 def plinko():
-    username = session.get('username', 'anom')
+    username = session.get('username')
+    if not username:
+        return jsonify({"status": "error", "message": "Not logged in"})
+
+    data = request.get_json() or {}
+    slot = data.get('slot')
+
+    prizes = [500, 100, 50, 10, 0, 50, 100, 500]
+
     try:
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
@@ -105,25 +69,23 @@ def plinko():
                 return jsonify({"status": "error", "message": "Not enough coins!"})
 
             coins = result[0] - 100
-            outcome = "lose"
 
-            # TODO: Add real randomness here or from client
-            import random
-            drop_position = random.randint(0, 10)  # Example drop position
-            if drop_position in [0, 10]:  # Corners win big
-                coins += 500
-                outcome = "win"
-            elif drop_position in [4, 5, 6]:  # Middle drop small win
-                coins += 150
-                outcome = "win"
+            # Validate slot index
+            if slot is None or not (0 <= slot < len(prizes)):
+                prize = 0
+            else:
+                prize = prizes[slot]
+
+            coins += prize
+            outcome = "win" if prize > 0 else "lose"
 
             c.execute("UPDATE users SET coins = ? WHERE username = ?", (coins, username))
             conn.commit()
-            return jsonify({"status": "success", "outcome": outcome, "new_balance": coins})
+
+            return jsonify({"status": "success", "outcome": outcome, "prize": prize, "new_balance": coins})
+
     except sqlite3.Error as e:
         return jsonify({"status": "error", "message": f"Database error: {e}"})
 
-
 if __name__ == '__main__':
-    # Use eventlet for SocketIO in dev mode
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=True)
