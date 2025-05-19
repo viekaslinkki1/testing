@@ -74,41 +74,69 @@
       background-color: #0056b3;
     }
 
-    /* Modal Styles */
-    #plinko-modal {
+    /* New styles for Games box */
+    #games-container {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #fafafa;
+      padding: 10px;
+      margin-top: 15px;
+      min-height: 100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #games-list {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    #games-list button {
+      background-color: #28a745;
+      padding: 10px 15px;
+      font-weight: normal;
+      border-radius: 4px;
+      height: auto;
+    }
+
+    #games-list button:hover {
+      background-color: #1e7e34;
+    }
+
+    #game-frame-container {
+      margin-top: 10px;
+      width: 100%;
+      height: 400px;
       display: none;
-      position: fixed;
-      z-index: 1000;
-      left: 0;
-      top: 0;
+      position: relative;
+    }
+
+    #game-frame {
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.8);
-    }
-
-    #plinko-modal iframe {
-      width: 80%;
-      height: 80%;
-      margin: 5% auto;
-      display: block;
       border: none;
-      border-radius: 10px;
+      border-radius: 8px;
     }
 
-    #close-modal {
+    #close-game-btn {
       position: absolute;
-      top: 20px;
-      right: 40px;
+      top: 8px;
+      right: 8px;
       background-color: red;
       color: white;
-      padding: 10px 20px;
       border: none;
-      cursor: pointer;
-      border-radius: 4px;
+      padding: 6px 12px;
       font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 10;
     }
 
-    #close-modal:hover {
+    #close-game-btn:hover {
       background-color: darkred;
     }
   </style>
@@ -122,13 +150,17 @@
       <input type="text" id="message" placeholder="Type your message" autocomplete="off" required />
       <button type="submit">Send</button>
     </form>
-    <button id="play-plinko">Play Plinko</button>
-  </div>
 
-  <!-- Plinko Game Modal -->
-  <div id="plinko-modal">
-    <button id="close-modal">Close</button>
-    <iframe src="https://plinko-web-game.netlify.app/"></iframe>
+    <div id="games-container">
+      <h3>Games</h3>
+      <div id="games-list">
+        <button id="play-plinko">Play Plinko</button>
+      </div>
+      <div id="game-frame-container">
+        <button id="close-game-btn">Close Game</button>
+        <iframe id="game-frame" src="" allowfullscreen></iframe>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -154,16 +186,23 @@
       messages.scrollTop = messages.scrollHeight;
     });
 
-    // Open Plinko Game in a Modal
-    const plinkoModal = document.getElementById('plinko-modal');
-    document.getElementById('play-plinko').onclick = () => {
-      plinkoModal.style.display = 'block';
-    };
+    // Games box logic
+    const playPlinkoBtn = document.getElementById('play-plinko');
+    const gameFrameContainer = document.getElementById('game-frame-container');
+    const gameFrame = document.getElementById('game-frame');
+    const closeGameBtn = document.getElementById('close-game-btn');
 
-    // Close Plinko Game
-    document.getElementById('close-modal').onclick = () => {
-      plinkoModal.style.display = 'none';
-    };
+    playPlinkoBtn.addEventListener('click', () => {
+      gameFrame.src = 'https://plinko-web-game.netlify.app/';
+      gameFrameContainer.style.display = 'block';
+      // Optionally scroll to game
+      gameFrameContainer.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    closeGameBtn.addEventListener('click', () => {
+      gameFrame.src = '';
+      gameFrameContainer.style.display = 'none';
+    });
   </script>
 </body>
 </html>
