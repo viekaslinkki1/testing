@@ -28,13 +28,18 @@ def init_db():
     except sqlite3.Error as e:
         print(f"Database Error: {e}")
 
-@app.route('/plinko')
-def home():
-    return redirect(url_for('plinko.html'))
 
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def password_protect():
+    if request.method == 'POST':
+        if request.form.get('password') == PASSWORD:
+            session['authenticated'] = True
+            return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
     if request.method == 'POST':
         if request.form.get('password') == PASSWORD:
             session['authenticated'] = True
@@ -45,7 +50,7 @@ def password_protect():
 @app.route('/chat')
 def index():
     if not session.get('authenticated'):
-        return redirect(url_for('password_protect'))
+        return redirect(url_for('login'))
     
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -56,6 +61,13 @@ def index():
         print(f"Database Error: {e}")
         messages = []
     return render_template('index.html', messages=messages)
+
+
+@app.route('/plinko')
+def plinko():
+    if not session.get('authenticated'):
+        return redirect(url_for('login'))
+    return render_template('plinko.html')
 
 
 @socketio.on('send_message')
