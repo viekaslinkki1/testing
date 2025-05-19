@@ -1,129 +1,77 @@
-import os
-import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, session
-from flask_socketio import SocketIO, emit
-import eventlet
-
-eventlet.monkey_patch()
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret'
+app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app)
 
-DB_FILE = 'chat.db'
-PASSWORD = '6767'  # Password for access
-
-
-def init_db():
-    """ Initialize the database and create the messages table if it doesn't exist. """
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute('''CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                username TEXT NOT NULL DEFAULT 'anom', 
-                message TEXT NOT NULL
-            )''')
-            conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
-
+# Global state for chat lock
+chat_locked = False
+locker_user_id = None
 
 @app.route('/')
-def password_protect():
-    if request.method == 'POST':
-        if request.form.get('password') == PASSWORD:
-            session['authenticated'] = True
-            return redirect(url_for('index'))
-    return render_template('login.html')
-
-@app.route('/roulette')
-def roulette():
-    if not session.get('authenticated'):
-        return redirect(url_for('login'))
-    return render_template('roulette.html')
-
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        if request.form.get('password') == PASSWORD:
-            session['authenticated'] = True
-            return redirect(url_for('index'))
-    return render_template('login.html')
-
-
-@app.route('/chat')
 def index():
-    if not session.get('authenticated'):
-        return redirect(url_for('login'))
-    
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-            messages = c.fetchall()[::-1]  # Show oldest first
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
-        messages = []
-    return render_template('index.html', messages=messages)
+    return render_template('index.html')
 
-
-@app.route('/plinko')
-def plinko():
-    if not session.get('authenticated'):
-        return redirect(url_for('login'))
-    return render_template('plinko.html')
-
+@socketio.on('connect')
+def on_connect():
+    print(f'User connected: {request.sid}')
+    emit('status', {'msg': 'Connected to chat server'})
 
 @socketio.on('send_message')
-def handle_send(data):
-    """ Handle incoming chat messages and broadcast them to all clients. """
-    username = data.get('username', 'anom').strip()
+def handle_message(data):
+    global chat_locked, locker_user_id
+
+    user_id = data.get('user_id')
     message = data.get('message')
 
-    if not message or message.strip() == "":
-        return  # Ignore empty messages
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
-            message_id = c.lastrowid
-            conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
+    if not user_id or not message:
+        emit('error', {'msg': 'Invalid message data'}, room=request.sid)
         return
 
-    emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
-
-
-@socketio.on('delete_messages')
-def handle_delete_messages(data):
-    """ Handle deletion of the latest specified number of messages. """
-    amount = data.get('amount', 0)
-    if not isinstance(amount, int) or amount <= 0:
-        return  # Ignore invalid inputs
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT ?", (amount,))
-            rows = c.fetchall()
-            ids_to_delete = [row[0] for row in rows]
-
-            if ids_to_delete:
-                query = f"DELETE FROM messages WHERE id IN ({','.join(['?'] * len(ids_to_delete))})"
-                c.execute(query, ids_to_delete)
-                conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
+    # If chat is locked, block all users except the locker
+    if chat_locked and user_id != locker_user_id:
+        emit('error', {'msg': 'Chat is locked. You cannot send messages now.'}, room=request.sid)
         return
 
-    emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
+    # Commands processing
+    if message.strip() == '/lock':
+        # Ask user for password via prompt_password event
+        emit('prompt_password', {'msg': 'Enter password to lock chat:'}, room=request.sid)
+        return
+
+    if message.strip() == '/unlock':
+        if user_id == locker_user_id:
+            # Unlock the chat
+            chat_locked = False
+            locker_user_id = None
+            emit('chat_unlocked', {'msg': 'Chat has been unlocked.'}, broadcast=True)
+        else:
+            emit('error', {'msg': 'Only the locker can unlock the chat.'}, room=request.sid)
+        return
+
+    # Normal message broadcast
+    emit('new_message', {'user': user_id, 'msg': message}, broadcast=True)
+
+
+@socketio.on('lock_password')
+def handle_lock_password(data):
+    global chat_locked, locker_user_id
+
+    user_id = data.get('user_id')
+    password = data.get('password')
+
+    if not user_id or password is None:
+        emit('error', {'msg': 'Invalid password data'}, room=request.sid)
+        return
+
+    if password == '100005':
+        chat_locked = True
+        locker_user_id = user_id
+        emit('chat_locked', {'msg': 'Chat locked! Only you can send messages now.'}, broadcast=True)
+    else:
+        emit('error', {'msg': 'Wrong password. Chat remains unlocked.'}, room=request.sid)
 
 
 if __name__ == '__main__':
-    init_db()
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    socketio.run(app, debug=True)
