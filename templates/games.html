@@ -19,7 +19,6 @@
     border-radius: 50%;
     left: 150px;
     top: 10px;
-    transition: top 2s ease, left 2s ease;
   }
   #slots {
     margin-top: 10px;
@@ -101,6 +100,53 @@
   let coins = {{ coins }};
   const cost = 100;
 
+  // Peg row Y positions (approx)
+  const pegRows = [60, 100, 140];
+  // The chip will "bounce" at these Y positions
+
+  // Bounce animation: small up and down on pegs
+  function bounceAt(y, duration) {
+    return new Promise(resolve => {
+      // move chip up a bit
+      chip.style.transition = `top ${duration / 2}ms ease`;
+      chip.style.top = (y - 15) + 'px';
+      setTimeout(() => {
+        // move chip down to peg row y
+        chip.style.top = y + 'px';
+      }, duration / 2);
+
+      setTimeout(resolve, duration);
+    });
+  }
+
+  // Animate chip drop with bounces on each peg row
+  async function dropChip(finalLeft) {
+    chip.style.transition = 'none';
+    chip.style.top = '10px';
+    chip.style.left = '150px';
+
+    // Start falling with bouncing on each row
+    for (let y of pegRows) {
+      chip.style.transition = `left 500ms ease, top 250ms ease`;
+      // Move horizontally a bit randomly to simulate bouncing left/right
+      let horizMove = (Math.random() < 0.5 ? -20 : 20);
+      chip.style.left = (parseInt(chip.style.left) + horizMove) + 'px';
+
+      // Move vertically to peg row
+      chip.style.top = y + 'px';
+
+      // Bounce vertically at peg row
+      await bounceAt(y, 500);
+    }
+    // Final drop to bottom (slots)
+    chip.style.transition = `top 700ms ease, left 700ms ease`;
+    chip.style.top = '350px';
+    chip.style.left = finalLeft + 'px';
+
+    // Wait for final animation
+    return new Promise(res => setTimeout(res, 700));
+  }
+
   playBtn.onclick = async () => {
     if (coins < cost) {
       messageDiv.textContent = "Not enough coins to play!";
@@ -113,12 +159,7 @@
     const slotIndex = Math.floor(Math.random() * 8);
     const leftPos = 20 + slotIndex * 40;
 
-    chip.style.transition = "top 2s ease, left 2s ease";
-    chip.style.top = "350px";
-    chip.style.left = leftPos + "px";
-
-    // Wait animation
-    await new Promise(r => setTimeout(r, 2100));
+    await dropChip(leftPos);
 
     // Call backend to resolve prize and update coins
     const response = await fetch('/plinko', {
@@ -137,9 +178,10 @@
       messageDiv.textContent = `Error: ${result.message}`;
     }
 
-    chip.style.transition = "none";
-    chip.style.top = "10px";
-    chip.style.left = "150px";
+    // Reset chip to top center
+    chip.style.transition = 'none';
+    chip.style.top = '10px';
+    chip.style.left = '150px';
 
     playBtn.disabled = false;
   };
