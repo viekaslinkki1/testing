@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Public Chat Room</title>
+    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #chat-container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            list-style: none;
+            padding: 0;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+            height: 300px;
+        }
+
+        #messages li {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            word-wrap: break-word;
+        }
+
+        #messages li:last-child {
+            border-bottom: none;
+        }
+
+        #chat-form {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        #username, #message {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            outline: none;
+            flex-grow: 1;
+        }
+
+        button {
+            padding: 0 20px;
+            background-color: #007bff;
+            border: none;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            height: 40px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <h2>Public Chat Room</h2>
+        <ul id="messages"></ul>
+        <form id="chat-form">
+            <input type="text" id="username" placeholder="Your name (optional)" autocomplete="off" />
+            <input type="text" id="message" placeholder="Type your message" autocomplete="off" required />
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script>
+        const socket = io();
+
+        document.getElementById('chat-form').addEventListener('submit', e => {
+            e.preventDefault();
+            const messageInput = document.getElementById('message');
+            const usernameInput = document.getElementById('username');
+            const message = messageInput.value.trim();
+            if (!message) return;
+            const username = usernameInput.value.trim() || "anom";
+            socket.emit('send_message', { username: username, message: message });
+            messageInput.value = '';
+        });
+
+        socket.on('receive_message', data => {
+            const messages = document.getElementById('messages');
+            const li = document.createElement('li');
+            li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
+            messages.appendChild(li);
+            messages.scrollTop = messages.scrollHeight;
+        });
+    </script>
+</body>
+</html>
