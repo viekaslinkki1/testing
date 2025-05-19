@@ -44,10 +44,16 @@ def ensure_user():
     # Ensure user exists in DB
     create_user(session['username'])
 
+@app.route('/chat')
+def chat():
+    return render_template("chat.html")
+
+
 
 @app.route('/')
-def index():
-    return render_template('index.html')
+def home():
+    return redirect(url_for('chat'))
+
 
 
 @app.route('/balance', methods=['GET'])
