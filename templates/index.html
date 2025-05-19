@@ -4,13 +4,118 @@
   <title>Public Chat Room</title>
   <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
   <style>
-    /* Styles omitted for brevity, use your existing CSS */
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+
+    #chat-container {
+      max-width: 700px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #messages {
+      flex-grow: 1;
+      overflow-y: auto;
+      list-style: none;
+      padding: 0;
+      margin-bottom: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #fafafa;
+      height: 300px;
+    }
+
+    #messages li {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      word-wrap: break-word;
+    }
+
+    #messages li:last-child {
+      border-bottom: none;
+    }
+
+    #chat-form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+
+    #username, #message {
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+      flex-grow: 1;
+    }
+
+    button {
+      padding: 0 20px;
+      background-color: #007bff;
+      border: none;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      height: 40px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    /* Modal Styles */
+    #plinko-modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+    }
+
+    #plinko-modal iframe {
+      width: 80%;
+      height: 80%;
+      margin: 5% auto;
+      display: block;
+      border: none;
+      border-radius: 10px;
+    }
+
+    #close-modal {
+      position: absolute;
+      top: 20px;
+      right: 40px;
+      background-color: red;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+
+    #close-modal:hover {
+      background-color: darkred;
+    }
   </style>
 </head>
 <body>
   <div id="chat-container">
     <h2>Public Chat Room</h2>
-    <p>Balance: <span id="balance">Loading...</span> coins</p>
     <ul id="messages"></ul>
     <form id="chat-form">
       <input type="text" id="username" placeholder="Your name (optional)" autocomplete="off" />
@@ -20,66 +125,16 @@
     <button id="play-plinko">Play Plinko</button>
   </div>
 
-  <!-- Plinko Game Overlay -->
-  <div id="plinko-game">
-    <div id="plinko-container">
-      <h2>Plinko Game</h2>
-      <p id="plinko-balance"></p>
-      <input type="number" id="plinko-rows" placeholder="Number of Rows" value="5" min="1">
-      <input type="number" id="plinko-bet" placeholder="Bet Amount" value="100" min="1">
-      <button id="start-plinko">Start Game</button>
-      <button id="close-plinko">Close</button>
-      <div id="plinko-result"></div>
-    </div>
+  <!-- Plinko Game Modal -->
+  <div id="plinko-modal">
+    <button id="close-modal">Close</button>
+    <iframe src="https://plinko-web-game.netlify.app/"></iframe>
   </div>
 
   <script>
     const socket = io();
 
-    // Fetch and display balance
-    fetch('/balance')
-      .then(response => response.json())
-      .then(data => {
-        document.getElementById('balance').innerText = data.coins;
-      });
-
-    // Toggle Plinko game visibility
-    document.getElementById('play-plinko').onclick = () => {
-      document.getElementById('plinko-game').style.display = 'block';
-    };
-
-    document.getElementById('close-plinko').onclick = () => {
-      document.getElementById('plinko-game').style.display = 'none';
-    };
-
-    document.getElementById('start-plinko').onclick = () => {
-      const rows = parseInt(document.getElementById('plinko-rows').value);
-      const bet = parseInt(document.getElementById('plinko-bet').value);
-
-      fetch('/plinko', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ bet, rows })
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.status === 'success') {
-          document.getElementById('plinko-result').innerHTML = `
-            <p>Path Taken: ${data.path}</p>
-            <p>Final Slot: ${data.final_slot}</p>
-            <p>Winnings: ${data.winnings}</p>
-            <p>New Balance: ${data.new_balance}</p>
-          `;
-          document.getElementById('balance').innerText = data.new_balance;
-        } else {
-          alert(data.message);
-        }
-      });
-    };
-
-    // Chat Message Handling
+    // Handle Chat Messages
     document.getElementById('chat-form').addEventListener('submit', e => {
       e.preventDefault();
       const messageInput = document.getElementById('message');
@@ -98,6 +153,17 @@
       messages.appendChild(li);
       messages.scrollTop = messages.scrollHeight;
     });
+
+    // Open Plinko Game in a Modal
+    const plinkoModal = document.getElementById('plinko-modal');
+    document.getElementById('play-plinko').onclick = () => {
+      plinkoModal.style.display = 'block';
+    };
+
+    // Close Plinko Game
+    document.getElementById('close-modal').onclick = () => {
+      plinkoModal.style.display = 'none';
+    };
   </script>
 </body>
 </html>
