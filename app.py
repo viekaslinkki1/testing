@@ -11,6 +11,9 @@ socketio = SocketIO(app)
 
 DB_FILE = 'chat.db'
 
+chat_locked = False  # Global lock state
+awaiting_password = False  # To track if server is waiting for password after /lock
+
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
@@ -31,12 +34,44 @@ def index():
 
 @socketio.on('send_message')
 def handle_send(data):
-    username = data.get('username', '').strip() or "anom"  # Use input username or default "anom"
-    message = data.get('message')
+    global chat_locked, awaiting_password
 
-    if not message or message.strip() == "":
+    username = data.get('username', '').strip() or "anom"
+    message = data.get('message', '').strip()
+
+    if not message:
         return  # Ignore empty messages
 
+    # If server is awaiting password input after /lock
+    if awaiting_password:
+        if message == '100005':
+            chat_locked = True
+            awaiting_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is now locked. Nobody can send messages.'}, broadcast=True)
+        else:
+            awaiting_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Lock aborted.'}, broadcast=True)
+        return
+
+    # If chat is locked
+    if chat_locked:
+        # Only allow /unlock command
+        if message == '/unlock':
+            chat_locked = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat unlocked. You can talk now.'}, broadcast=True)
+        else:
+            # Reject all other messages
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is locked. You cannot send messages.'})
+        return
+
+    # If not locked, check for /lock command
+    if message == '/lock':
+        # Ask for password next message
+        awaiting_password = True
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Please enter the password to lock chat:'})
+        return
+
+    # Normal message: save and broadcast
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
@@ -49,7 +84,7 @@ def handle_send(data):
 def handle_delete_messages(data):
     amount = data.get('amount', 0)
     if not isinstance(amount, int) or amount <= 0:
-        return  # Ignore invalid inputs
+        return
 
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
