@@ -1,69 +1,114 @@
-""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Public Chat Room</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-</head>
-<body>
-    <div class="navbar">
-        <h1>Public Chat Room</h1>
-        <button onclick="window.location.href='/'" class="chat-button">Chat Room</button>
-        <button onclick="window.location.href='/games'" class="games-button">Games</button>
-    </div>
-
-    <div id="chat-container">
-        <!-- Chat room content goes here -->
-    </div>
-
-    <style>
-        .navbar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        .games-button, .chat-button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            border-radius: 5px;
-        }
-        .games-button:hover, .chat-button:hover {
-            background-color: #45a049;
-        }
-    </style>
-</body>
-</html>
-
-<!-- New Games Page -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>Games Room</title>
-</head>
-<body>
-    <div class="navbar">
-        <button onclick="window.location.href='/'" class="chat-button">Back to Chat Room</button>
-    </div>
-    <h2>Welcome to the Games Room!</h2>
-    <p>Game selection coming soon...</p>
-
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
+            background: #f0f0f0;
         }
-        h2 {
-            color: #4CAF50;
+        .navbar {
+            margin-bottom: 20px;
         }
-        p {
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #balance {
             font-size: 18px;
+            margin-bottom: 10px;
+        }
+        #message {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        #plinko-board {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .slot {
+            width: 50px;
+            height: 100px;
+            background: #ddd;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 0 5px #999;
+        }
+        .slot:hover {
+            background: #4CAF50;
+            color: white;
         }
     </style>
+</head>
+<body>
+    <div class="navbar">
+        <button onclick="window.location.href='/'">Back to Chat Room</button>
+    </div>
+
+    <h2>Welcome to the Games Room!</h2>
+
+    <div id="balance">Your Coins: <span id="coins">{{ coins }}</span></div>
+    <button id="claim-btn">Claim 2000 Coins (every 12 hours)</button>
+
+    <div id="plinko-board">
+        <div class="slot" data-position="left">Left</div>
+        <div class="slot" data-position="middle">Middle</div>
+        <div class="slot" data-position="right">Right</div>
+    </div>
+
+    <div id="message"></div>
+
+    <script>
+        $(document).ready(function() {
+            $('#claim-btn').click(function() {
+                $.post('/claim', {}, function(data) {
+                    if (data.status === 'success') {
+                        $('#coins').text(data.new_balance);
+                        $('#message').text('Successfully claimed 2000 coins!');
+                    } else {
+                        $('#message').text(data.message);
+                    }
+                });
+            });
+
+            $('.slot').click(function() {
+                const position = $(this).data('position');
+                $('#message').text('Playing Plinko...');
+
+                $.post('/plinko', {position: position}, function(data) {
+                    if (data.status === 'success') {
+                        $('#coins').text(data.new_balance);
+                        if (data.outcome === 'win') {
+                            $('#message').text('You won coins! 🎉');
+                        } else {
+                            $('#message').text('You lost coins. Try again!');
+                        }
+                    } else {
+                        $('#message').text(data.message);
+                    }
+                });
+            });
+        });
+    </script>
 </body>
-</html>""
+</html>
