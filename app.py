@@ -51,6 +51,10 @@ def home():
 def chat():
     return render_template("chat.html")
 
+@app.route('/plinko')
+def chat():
+    return render_template("plinko.html")
+
 
 @app.route('/balance', methods=['GET'])
 def get_balance():
