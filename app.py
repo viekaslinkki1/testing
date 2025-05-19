@@ -1,8 +1,9 @@
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask_socketio import SocketIO, emit
 import eventlet
+from datetime import datetime, timedelta
 
 eventlet.monkey_patch()
 
@@ -11,11 +12,13 @@ app.config['SECRET_KEY'] = 'secret'
 socketio = SocketIO(app)
 
 DB_FILE = 'chat.db'
-PASSWORD = '12345'  # Password for access
+PASSWORD = '12345'
+COIN_AMOUNT = 2000
+CLAIM_INTERVAL = timedelta(hours=12)
 
 
 def init_db():
-    """ Initialize the database and create the messages table if it doesn't exist. """
+    """ Initialize the database and create tables if they don't exist. """
     try:
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
@@ -24,86 +27,74 @@ def init_db():
                 username TEXT NOT NULL DEFAULT 'anom', 
                 message TEXT NOT NULL
             )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                coins INTEGER DEFAULT 0,
+                last_claim TIMESTAMP DEFAULT (DATETIME('now', '-1 day'))
+            )''')
             conn.commit()
     except sqlite3.Error as e:
         print(f"Database Error: {e}")
-
-
-@app.route('/', methods=['GET', 'POST'])
-def password_protect():
-    if request.method == 'POST':
-        if request.form.get('password') == PASSWORD:
-            session['authenticated'] = True
-            return redirect(url_for('index'))
-    return render_template('login.html')
-
-
-@app.route('/chat')
-def index():
-    if not session.get('authenticated'):
-        return redirect(url_for('password_protect'))
-    
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-            messages = c.fetchall()[::-1]
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
-        messages = []
-    return render_template('index.html', messages=messages)
 
 
 @app.route('/games')
 def games():
-    return render_template('games.html')
+    username = session.get('username', 'anom')
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT coins FROM users WHERE username = ?", (username,))
+        result = c.fetchone()
+        coins = result[0] if result else 0
+    return render_template('games.html', coins=coins)
 
 
-@socketio.on('send_message')
-def handle_send(data):
-    """ Handle incoming chat messages and broadcast them to all clients. """
-    username = data.get('username', 'anom').strip()
-    message = data.get('message')
+@app.route('/claim', methods=['POST'])
+def claim_coins():
+    username = session.get('username', 'anom')
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT coins, last_claim FROM users WHERE username = ?", (username,))
+        result = c.fetchone()
 
-    if not message or message.strip() == "":
-        return
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
-            message_id = c.lastrowid
-            conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
-        return
-
-    emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
-
-
-@socketio.on('delete_messages')
-def handle_delete_messages(data):
-    """ Handle deletion of the latest specified number of messages. """
-    amount = data.get('amount', 0)
-    if not isinstance(amount, int) or amount <= 0:
-        return
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT ?", (amount,))
-            rows = c.fetchall()
-            ids_to_delete = [row[0] for row in rows]
-
-            if ids_to_delete:
-                query = f"DELETE FROM messages WHERE id IN ({','.join(['?'] * len(ids_to_delete))})"
-                c.execute(query, ids_to_delete)
+        if result:
+            last_claim = datetime.strptime(result[1], '%Y-%m-%d %H:%M:%S')
+            if datetime.now() - last_claim >= CLAIM_INTERVAL:
+                new_balance = result[0] + COIN_AMOUNT
+                c.execute("UPDATE users SET coins = ?, last_claim = ? WHERE username = ?",
+                          (new_balance, datetime.now(), username))
                 conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database Error: {e}")
-        return
+                return jsonify({"status": "success", "new_balance": new_balance})
+            else:
+                return jsonify({"status": "error", "message": "Too soon to claim again!"})
+        else:
+            c.execute("INSERT INTO users (username, coins, last_claim) VALUES (?, ?, ?)",
+                      (username, COIN_AMOUNT, datetime.now()))
+            conn.commit()
+            return jsonify({"status": "success", "new_balance": COIN_AMOUNT})
 
-    emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
+
+@app.route('/plinko', methods=['POST'])
+def plinko():
+    username = session.get('username', 'anom')
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT coins FROM users WHERE username = ?", (username,))
+        result = c.fetchone()
+        
+        if not result or result[0] < 100:
+            return jsonify({"status": "error", "message": "Not enough coins!"})
+
+        coins = result[0] - 100
+        outcome = "lose"
+        
+        # Random drop logic (I'll implement randomness in JS later)
+        if username == "corner":  # This is just a placeholder
+            coins += 500
+            outcome = "win"
+        
+        c.execute("UPDATE users SET coins = ? WHERE username = ?", (coins, username))
+        conn.commit()
+        return jsonify({"status": "success", "outcome": outcome, "new_balance": coins})
 
 
 if __name__ == '__main__':
