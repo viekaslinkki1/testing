@@ -1,11 +1,11 @@
 from flask import Flask, render_template, request
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app)
 
-# Global state for chat lock
+# Global variables to keep chat lock state
 chat_locked = False
 locker_user_id = None
 
@@ -29,20 +29,20 @@ def handle_message(data):
         emit('error', {'msg': 'Invalid message data'}, room=request.sid)
         return
 
-    # If chat is locked, block all users except the locker
+    # Block messages from everyone except locker if chat is locked
     if chat_locked and user_id != locker_user_id:
         emit('error', {'msg': 'Chat is locked. You cannot send messages now.'}, room=request.sid)
         return
 
-    # Commands processing
+    # Handle commands
     if message.strip() == '/lock':
-        # Ask user for password via prompt_password event
+        # Ask for password
         emit('prompt_password', {'msg': 'Enter password to lock chat:'}, room=request.sid)
         return
 
     if message.strip() == '/unlock':
         if user_id == locker_user_id:
-            # Unlock the chat
+            # Unlock chat
             chat_locked = False
             locker_user_id = None
             emit('chat_unlocked', {'msg': 'Chat has been unlocked.'}, broadcast=True)
@@ -50,9 +50,8 @@ def handle_message(data):
             emit('error', {'msg': 'Only the locker can unlock the chat.'}, room=request.sid)
         return
 
-    # Normal message broadcast
+    # Broadcast normal message
     emit('new_message', {'user': user_id, 'msg': message}, broadcast=True)
-
 
 @socketio.on('lock_password')
 def handle_lock_password(data):
@@ -71,7 +70,6 @@ def handle_lock_password(data):
         emit('chat_locked', {'msg': 'Chat locked! Only you can send messages now.'}, broadcast=True)
     else:
         emit('error', {'msg': 'Wrong password. Chat remains unlocked.'}, room=request.sid)
-
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
