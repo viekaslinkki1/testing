@@ -1,22 +1,20 @@
-import os
-import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory
+from flask_socketio import SocketIO, emit
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, session
-from flask_socketio import SocketIO, emit, disconnect
-import eventlet
-eventlet.monkey_patch()
+import sqlite3
+import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secretkeyhere'  # Change this to a strong secret
+app.config['SECRET_KEY'] = 'secretkeyhere'  # Change to something secure
 socketio = SocketIO(app)
-
-DB_FILE = 'chat.db'
-
-USER_IDS = {}  # sid -> userid
-ROLES = {}     # userid -> role
 
 PASSWORD_ON_LOGIN = "6767"
 PASSWORD_ROLE_CHANGE = "100005"
+
+USER_IDS = {}
+ROLES = {}
+
+DB_FILE = 'chat.db'
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -48,19 +46,13 @@ def logout():
 def index():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-        messages = c.fetchall()[::-1]  # oldest first
-    return render_template('index.html', messages=messages)
+    # Serve your existing index.html without modification
+    return send_from_directory('templates', 'index.html')
 
 @socketio.on('connect')
-def handle_connect():
+def on_connect():
     if not session.get('logged_in'):
-        # Refuse connection if not logged in
-        return False
-
+        return False  # reject connection if not logged in
     sid = request.sid
     if sid not in USER_IDS:
         USER_IDS[sid] = str(uuid.uuid4())[:8]
@@ -77,7 +69,7 @@ def handle_send(data):
     if not message:
         return
 
-    # Command handling (same as before)
+    # Role command handling (same as before)
     if message.startswith('/role'):
         parts = message.split()
         if len(parts) == 1:
@@ -98,15 +90,14 @@ def handle_send(data):
             emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '⚠️ Invalid /role command format.'}, room=sid)
             return
 
-    # Normal chat message
-    username = userid
+    # Save message to DB
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
+        c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (userid, message))
         message_id = c.lastrowid
         conn.commit()
 
-    emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
+    emit('receive_message', {'id': message_id, 'username': userid, 'message': message}, broadcast=True)
 
 @socketio.on('submit_role_password')
 def handle_role_password(data):
