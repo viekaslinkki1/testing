@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+""<!DOCTYPE html>
 <html>
 <head>
   <title>Public Chat Room</title>
@@ -6,11 +6,9 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      background-color: #f4f4f4;
-      margin: 0;
-      padding: 20px;
+      margin: 30px;
+      background: #f4f4f4;
     }
-
     #chat-container {
       max-width: 700px;
       margin: 0 auto;
@@ -20,8 +18,9 @@
       box-shadow: 0 0 8px rgba(0,0,0,0.1);
       display: flex;
       flex-direction: column;
+      height: 80vh;
+      position: relative;
     }
-
     #messages {
       flex-grow: 1;
       overflow-y: auto;
@@ -31,34 +30,35 @@
       border: 1px solid #ddd;
       border-radius: 4px;
       background: #fafafa;
-      height: 300px;
     }
-
     #messages li {
       padding: 8px 12px;
       border-bottom: 1px solid #eee;
-      word-wrap: break-word;
     }
-
     #messages li:last-child {
       border-bottom: none;
     }
-
     #chat-form {
       display: flex;
       gap: 8px;
-      margin-bottom: 15px;
+      align-items: center;
     }
-
-    #username, #message {
+    #username {
+      width: 120px;
       padding: 10px;
       font-size: 16px;
       border: 1px solid #ccc;
       border-radius: 4px;
       outline: none;
-      flex-grow: 1;
     }
-
+    #message {
+      flex-grow: 1;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+    }
     button {
       padding: 0 20px;
       background-color: #007bff;
@@ -67,142 +67,76 @@
       font-weight: bold;
       cursor: pointer;
       border-radius: 4px;
+      transition: background-color 0.3s;
       height: 40px;
     }
-
     button:hover {
       background-color: #0056b3;
     }
-
-    /* New styles for Games box */
-    #games-container {
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background: #fafafa;
-      padding: 10px;
-      margin-top: 15px;
-      min-height: 100px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    #games-list {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: center;
-      width: 100%;
-    }
-
-    #games-list button {
-      background-color: #28a745;
-      padding: 10px 15px;
-      font-weight: normal;
-      border-radius: 4px;
-      height: auto;
-    }
-
-    #games-list button:hover {
-      background-color: #1e7e34;
-    }
-
-    #game-frame-container {
+    #plinko-button {
       margin-top: 10px;
-      width: 100%;
-      height: 400px;
-      display: none;
-      position: relative;
+      background-color: #28a745;
     }
-
-    #game-frame {
-      width: 100%;
-      height: 100%;
-      border: none;
-      border-radius: 8px;
-    }
-
-    #close-game-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background-color: red;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      font-weight: bold;
-      border-radius: 4px;
-      cursor: pointer;
-      z-index: 10;
-    }
-
-    #close-game-btn:hover {
-      background-color: darkred;
+    #plinko-button:hover {
+      background-color: #218838;
     }
   </style>
 </head>
 <body>
   <div id="chat-container">
     <h2>Public Chat Room</h2>
-    <ul id="messages"></ul>
+    
+    <ul id="messages">
+      {% for id, username, message in messages %}
+        <li data-id="{{ id }}"><strong>{{ username }}:</strong> {{ message }}</li>
+      {% endfor %}
+    </ul>
+
     <form id="chat-form">
-      <input type="text" id="username" placeholder="Your name (optional)" autocomplete="off" />
-      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required />
+      <input type="text" id="username" placeholder="Your name (optional)">
+      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required>
       <button type="submit">Send</button>
     </form>
 
-    <div id="games-container">
-      <h3>Games</h3>
-      <div id="games-list">
-        <button id="play-plinko">Play Plinko</button>
-      </div>
-      <div id="game-frame-container">
-        <button id="close-game-btn">Close Game</button>
-        <iframe id="game-frame" src="" allowfullscreen></iframe>
-      </div>
-    </div>
+    <button id="plinko-button">Play Plinko</button>
   </div>
 
-  <script>
-    const socket = io();
+<script>
+  const socket = io();
 
-    // Handle Chat Messages
-    document.getElementById('chat-form').addEventListener('submit', e => {
-      e.preventDefault();
-      const messageInput = document.getElementById('message');
-      const usernameInput = document.getElementById('username');
-      const message = messageInput.value.trim();
-      if (!message) return;
-      const username = usernameInput.value.trim() || "anom";
-      socket.emit('send_message', { username: username, message: message });
-      messageInput.value = '';
+  socket.on('receive_message', data => {
+    const messages = document.getElementById('messages');
+    const li = document.createElement('li');
+    li.setAttribute('data-id', data.id);
+    li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
+    messages.appendChild(li);
+    messages.scrollTop = messages.scrollHeight;
+  });
+
+  socket.on('messages_deleted', data => {
+    const deletedIds = data.deleted_ids;
+    deletedIds.forEach(id => {
+      const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
+      if (msgElem) {
+        msgElem.remove();
+      }
     });
+  });
 
-    socket.on('receive_message', data => {
-      const messages = document.getElementById('messages');
-      const li = document.createElement('li');
-      li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
-      messages.appendChild(li);
-      messages.scrollTop = messages.scrollHeight;
-    });
+  document.getElementById('chat-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const messageInput = document.getElementById('message');
+    const usernameInput = document.getElementById('username');
+    const message = messageInput.value.trim();
+    if (!message) return;
+    const username = usernameInput.value.trim() || "anon";
+    socket.emit('send_message', { username: username, message: message });
+    messageInput.value = '';
+  });
 
-    // Games box logic
-    const playPlinkoBtn = document.getElementById('play-plinko');
-    const gameFrameContainer = document.getElementById('game-frame-container');
-    const gameFrame = document.getElementById('game-frame');
-    const closeGameBtn = document.getElementById('close-game-btn');
-
-    playPlinkoBtn.addEventListener('click', () => {
-      gameFrame.src = 'https://plinko-web-game.netlify.app/';
-      gameFrameContainer.style.display = 'block';
-      // Optionally scroll to game
-      gameFrameContainer.scrollIntoView({ behavior: 'smooth' });
-    });
-
-    closeGameBtn.addEventListener('click', () => {
-      gameFrame.src = '';
-      gameFrameContainer.style.display = 'none';
-    });
-  </script>
+  document.getElementById('plinko-button').addEventListener('click', () => {
+    window.location.href = "/plinko";
+  });
+</script>
 </body>
-</html>
+</html>""
