@@ -5,7 +5,6 @@ import random
 
 app = Flask(__name__)
 app.secret_key = 'secret'
-
 DB_FILE = 'chat.db'
 COIN_AMOUNT = 2000
 CLAIM_INTERVAL = timedelta(hours=12)
@@ -24,38 +23,17 @@ def init_db():
 
 @app.route('/')
 def index():
+    return render_template('index.html')
+
+
+@app.route('/balance', methods=['GET'])
+def get_balance():
     username = session.get('username', 'anom')
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT coins FROM users WHERE username = ?", (username,))
         result = c.fetchone()
-        coins = result[0] if result else 0
-    return render_template('index.html', coins=coins)
-
-
-@app.route('/claim', methods=['POST'])
-def claim_coins():
-    username = session.get('username', 'anom')
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT coins, last_claim FROM users WHERE username = ?", (username,))
-        result = c.fetchone()
-
-        if result:
-            last_claim = datetime.strptime(result[1], '%Y-%m-%d %H:%M:%S')
-            if datetime.now() - last_claim >= CLAIM_INTERVAL:
-                new_balance = result[0] + COIN_AMOUNT
-                c.execute("UPDATE users SET coins = ?, last_claim = ? WHERE username = ?",
-                          (new_balance, datetime.now(), username))
-                conn.commit()
-                return jsonify({"status": "success", "new_balance": new_balance})
-            else:
-                return jsonify({"status": "error", "message": "Too soon to claim again!"})
-        else:
-            c.execute("INSERT INTO users (username, coins, last_claim) VALUES (?, ?, ?)",
-                      (username, COIN_AMOUNT, datetime.now()))
-            conn.commit()
-            return jsonify({"status": "success", "new_balance": COIN_AMOUNT})
+    return jsonify({"coins": result[0] if result else 0})
 
 
 @app.route('/plinko', methods=['POST'])
@@ -74,11 +52,10 @@ def plinko():
 
         coins = result[0] - bet_amount
         path = [random.choice([-1, 1]) for _ in range(rows)]
-
-        final_slot = path.count(1)  # Count how many times it went right
-        payouts = {0: 0, 1: 0, 2: 1.5, 3: 2, 4: 5}  # Modify this to match game logic
+        final_slot = path.count(1)
+        
+        payouts = {0: 0, 1: 0, 2: 1.5, 3: 2, 4: 5}
         multiplier = payouts.get(final_slot, 0)
-
         winnings = int(bet_amount * multiplier)
         coins += winnings
 
