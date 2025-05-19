@@ -1,11 +1,15 @@
+import os
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app)
 
-# Global variables to keep chat lock state
+# Use eventlet if installed, else default async_mode
+async_mode = 'eventlet'  # You can change to 'gevent' or 'threading' if needed
+
+socketio = SocketIO(app, async_mode=async_mode)
+
 chat_locked = False
 locker_user_id = None
 
@@ -29,20 +33,17 @@ def handle_message(data):
         emit('error', {'msg': 'Invalid message data'}, room=request.sid)
         return
 
-    # Block messages from everyone except locker if chat is locked
     if chat_locked and user_id != locker_user_id:
         emit('error', {'msg': 'Chat is locked. You cannot send messages now.'}, room=request.sid)
         return
 
-    # Handle commands
     if message.strip() == '/lock':
-        # Ask for password
         emit('prompt_password', {'msg': 'Enter password to lock chat:'}, room=request.sid)
         return
 
     if message.strip() == '/unlock':
         if user_id == locker_user_id:
-            # Unlock chat
+            global chat_locked, locker_user_id
             chat_locked = False
             locker_user_id = None
             emit('chat_unlocked', {'msg': 'Chat has been unlocked.'}, broadcast=True)
@@ -50,7 +51,6 @@ def handle_message(data):
             emit('error', {'msg': 'Only the locker can unlock the chat.'}, room=request.sid)
         return
 
-    # Broadcast normal message
     emit('new_message', {'user': user_id, 'msg': message}, broadcast=True)
 
 @socketio.on('lock_password')
@@ -72,4 +72,5 @@ def handle_lock_password(data):
         emit('error', {'msg': 'Wrong password. Chat remains unlocked.'}, room=request.sid)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
