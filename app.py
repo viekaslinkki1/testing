@@ -47,11 +47,16 @@ def index():
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-            messages = c.fetchall()[::-1]  # Show oldest first
+            messages = c.fetchall()[::-1]
     except sqlite3.Error as e:
         print(f"Database Error: {e}")
         messages = []
     return render_template('index.html', messages=messages)
+
+
+@app.route('/games')
+def games():
+    return render_template('games.html')
 
 
 @socketio.on('send_message')
@@ -61,7 +66,7 @@ def handle_send(data):
     message = data.get('message')
 
     if not message or message.strip() == "":
-        return  # Ignore empty messages
+        return
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -81,7 +86,7 @@ def handle_delete_messages(data):
     """ Handle deletion of the latest specified number of messages. """
     amount = data.get('amount', 0)
     if not isinstance(amount, int) or amount <= 0:
-        return  # Ignore invalid inputs
+        return
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
