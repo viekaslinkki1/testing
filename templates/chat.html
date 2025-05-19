@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+</head>
+<body>
+    <h1>Welcome to Chat!</h1>
+    <p>Your coins: <span id="coins">Loading...</span></p>
+    <button onclick="claimCoins()">Claim 2000 coins (every 12h)</button>
+
+    <script>
+        async function fetchBalance() {
+            const res = await fetch('/balance');
+            const data = await res.json();
+            document.getElementById('coins').textContent = data.coins;
+        }
+
+        async function claimCoins() {
+            const res = await fetch('/claim', {method: 'POST'});
+            const data = await res.json();
+            alert(data.message);
+            fetchBalance();
+        }
+
+        fetchBalance();
+    </script>
+</body>
+</html>
