@@ -16,7 +16,6 @@ PASSWORD = '12345'
 COIN_AMOUNT = 2000
 CLAIM_INTERVAL = timedelta(hours=12)
 
-
 def init_db():
     """ Initialize the database and create tables if they don't exist. """
     try:
@@ -36,6 +35,9 @@ def init_db():
     except sqlite3.Error as e:
         print(f"Database Error: {e}")
 
+@app.route('/')
+def index():
+    return redirect(url_for('games'))
 
 @app.route('/games')
 def games():
@@ -46,7 +48,6 @@ def games():
         result = c.fetchone()
         coins = result[0] if result else 0
     return render_template('games.html', coins=coins)
-
 
 @app.route('/claim', methods=['POST'])
 def claim_coins():
@@ -72,7 +73,6 @@ def claim_coins():
             conn.commit()
             return jsonify({"status": "success", "new_balance": COIN_AMOUNT})
 
-
 @app.route('/plinko', methods=['POST'])
 def plinko():
     username = session.get('username', 'anom')
@@ -87,15 +87,14 @@ def plinko():
         coins = result[0] - 100
         outcome = "lose"
         
-        # Random drop logic (I'll implement randomness in JS later)
-        if username == "corner":  # This is just a placeholder
+        # Random drop logic placeholder (to be implemented later)
+        if username == "corner":  # Example condition for winning
             coins += 500
             outcome = "win"
         
         c.execute("UPDATE users SET coins = ? WHERE username = ?", (coins, username))
         conn.commit()
         return jsonify({"status": "success", "outcome": outcome, "new_balance": coins})
-
 
 if __name__ == '__main__':
     init_db()
