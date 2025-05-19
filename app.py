@@ -21,6 +21,30 @@ def init_db():
         conn.commit()
 
 
+def get_user(username):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT coins, last_claim FROM users WHERE username = ?", (username,))
+        return c.fetchone()
+
+
+def create_user(username):
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO users (username, coins, last_claim) VALUES (?, ?, ?)",
+                  (username, COIN_AMOUNT, datetime.now() - timedelta(days=1)))
+        conn.commit()
+
+
+@app.before_request
+def ensure_user():
+    # For demo, assign session username if not set
+    if 'username' not in session:
+        session['username'] = 'user1'  # Replace or extend with real login logic
+    # Ensure user exists in DB
+    create_user(session['username'])
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -28,40 +52,66 @@ def index():
 
 @app.route('/balance', methods=['GET'])
 def get_balance():
-    username = session.get('username', 'anom')
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT coins FROM users WHERE username = ?", (username,))
-        result = c.fetchone()
-    return jsonify({"coins": result[0] if result else 0})
+    username = session.get('username')
+    user = get_user(username)
+    coins = user[0] if user else 0
+    return jsonify({"coins": coins})
+
+
+@app.route('/claim', methods=['POST'])
+def claim_coins():
+    username = session.get('username')
+    user = get_user(username)
+    if not user:
+        return jsonify({"status": "error", "message": "User not found."})
+    
+    coins, last_claim_str = user
+    last_claim = datetime.strptime(last_claim_str, '%Y-%m-%d %H:%M:%S.%f')
+    now = datetime.now()
+
+    if now - last_claim >= CLAIM_INTERVAL:
+        coins += COIN_AMOUNT
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("UPDATE users SET coins = ?, last_claim = ? WHERE username = ?", (coins, now, username))
+            conn.commit()
+        return jsonify({"status": "success", "message": f"Claimed {COIN_AMOUNT} coins!", "new_balance": coins})
+    else:
+        time_left = CLAIM_INTERVAL - (now - last_claim)
+        return jsonify({"status": "error", "message": f"Wait {str(time_left).split('.')[0]} before claiming again."})
 
 
 @app.route('/plinko', methods=['POST'])
 def plinko():
-    username = session.get('username', 'anom')
+    username = session.get('username')
     bet_amount = int(request.json['bet'])
     rows = int(request.json['rows'])
 
+    user = get_user(username)
+    if not user:
+        return jsonify({"status": "error", "message": "User not found."})
+
+    coins = user[0]
+
+    if coins < bet_amount:
+        return jsonify({"status": "error", "message": "Not enough coins!"})
+
+    coins -= bet_amount
+
+    path = [random.choice([-1, 1]) for _ in range(rows)]
+    final_slot = path.count(1)
+
+    payouts = {0: 0, 1: 0, 2: 1.5, 3: 2, 4: 5}
+    multiplier = payouts.get(final_slot, 0)
+    winnings = int(bet_amount * multiplier)
+    coins += winnings
+
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("SELECT coins FROM users WHERE username = ?", (username,))
-        result = c.fetchone()
-
-        if not result or result[0] < bet_amount:
-            return jsonify({"status": "error", "message": "Not enough coins!"})
-
-        coins = result[0] - bet_amount
-        path = [random.choice([-1, 1]) for _ in range(rows)]
-        final_slot = path.count(1)
-        
-        payouts = {0: 0, 1: 0, 2: 1.5, 3: 2, 4: 5}
-        multiplier = payouts.get(final_slot, 0)
-        winnings = int(bet_amount * multiplier)
-        coins += winnings
-
         c.execute("UPDATE users SET coins = ? WHERE username = ?", (coins, username))
         conn.commit()
-        return jsonify({"status": "success", "path": path, "final_slot": final_slot, "winnings": winnings, "new_balance": coins})
+
+    return jsonify({"status": "success", "path": path, "final_slot": final_slot, "winnings": winnings, "new_balance": coins})
 
 
 if __name__ == '__main__':
