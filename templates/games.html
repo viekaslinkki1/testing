@@ -1,114 +1,148 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <title>Games Room</title>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background: #f0f0f0;
-        }
-        .navbar {
-            margin-bottom: 20px;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            margin: 5px;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        #balance {
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-        #message {
-            margin-top: 15px;
-            font-weight: bold;
-        }
-        #plinko-board {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-        }
-        .slot {
-            width: 50px;
-            height: 100px;
-            background: #ddd;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 20px;
-            cursor: pointer;
-            user-select: none;
-            box-shadow: 0 0 5px #999;
-        }
-        .slot:hover {
-            background: #4CAF50;
-            color: white;
-        }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plinko Game</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+  #board { position: relative; width: 320px; height: 400px; margin: 0 auto; background: #eee; border-radius: 10px; }
+  .peg {
+    position: absolute;
+    width: 12px; height: 12px; background: #333;
+    border-radius: 50%;
+  }
+  #chip {
+    position: absolute;
+    width: 20px; height: 20px;
+    background: red;
+    border-radius: 50%;
+    left: 150px;
+    top: 10px;
+    transition: top 2s ease, left 2s ease;
+  }
+  #slots {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .slot {
+    width: 30px; height: 40px;
+    border: 1px solid #666;
+    background: #ddd;
+    line-height: 40px;
+    font-weight: bold;
+  }
+  button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    font-size: 18px;
+  }
+  #coins {
+    margin-top: 10px;
+    font-size: 18px;
+  }
+  #message {
+    margin-top: 10px;
+    font-weight: bold;
+  }
+</style>
 </head>
 <body>
-    <div class="navbar">
-        <button onclick="window.location.href='/'">Back to Chat Room</button>
-    </div>
+<h1>Plinko Game</h1>
+<div id="coins">Coins: {{ coins }}</div>
+<div id="board">
+  <div id="chip"></div>
+  <!-- Peg rows -->
+  <div class="peg" style="top:60px; left:50px;"></div>
+  <div class="peg" style="top:60px; left:90px;"></div>
+  <div class="peg" style="top:60px; left:130px;"></div>
+  <div class="peg" style="top:60px; left:170px;"></div>
+  <div class="peg" style="top:60px; left:210px;"></div>
+  <div class="peg" style="top:60px; left:250px;"></div>
 
-    <h2>Welcome to the Games Room!</h2>
+  <div class="peg" style="top:100px; left:70px;"></div>
+  <div class="peg" style="top:100px; left:110px;"></div>
+  <div class="peg" style="top:100px; left:150px;"></div>
+  <div class="peg" style="top:100px; left:190px;"></div>
+  <div class="peg" style="top:100px; left:230px;"></div>
 
-    <div id="balance">Your Coins: <span id="coins">{{ coins }}</span></div>
-    <button id="claim-btn">Claim 2000 Coins (every 12 hours)</button>
+  <div class="peg" style="top:140px; left:50px;"></div>
+  <div class="peg" style="top:140px; left:90px;"></div>
+  <div class="peg" style="top:140px; left:130px;"></div>
+  <div class="peg" style="top:140px; left:170px;"></div>
+  <div class="peg" style="top:140px; left:210px;"></div>
+  <div class="peg" style="top:140px; left:250px;"></div>
+</div>
 
-    <div id="plinko-board">
-        <div class="slot" data-position="left">Left</div>
-        <div class="slot" data-position="middle">Middle</div>
-        <div class="slot" data-position="right">Right</div>
-    </div>
+<div id="slots">
+  <div class="slot" data-prize="500">500</div>
+  <div class="slot" data-prize="100">100</div>
+  <div class="slot" data-prize="50">50</div>
+  <div class="slot" data-prize="10">10</div>
+  <div class="slot" data-prize="0">0</div>
+  <div class="slot" data-prize="50">50</div>
+  <div class="slot" data-prize="100">100</div>
+  <div class="slot" data-prize="500">500</div>
+</div>
 
-    <div id="message"></div>
+<button id="playBtn">Play (100 coins)</button>
+<div id="message"></div>
 
-    <script>
-        $(document).ready(function() {
-            $('#claim-btn').click(function() {
-                $.post('/claim', {}, function(data) {
-                    if (data.status === 'success') {
-                        $('#coins').text(data.new_balance);
-                        $('#message').text('Successfully claimed 2000 coins!');
-                    } else {
-                        $('#message').text(data.message);
-                    }
-                });
-            });
+<script>
+  const chip = document.getElementById('chip');
+  const playBtn = document.getElementById('playBtn');
+  const coinsDisplay = document.getElementById('coins');
+  const messageDiv = document.getElementById('message');
 
-            $('.slot').click(function() {
-                const position = $(this).data('position');
-                $('#message').text('Playing Plinko...');
+  let coins = {{ coins }};
+  const cost = 100;
 
-                $.post('/plinko', {position: position}, function(data) {
-                    if (data.status === 'success') {
-                        $('#coins').text(data.new_balance);
-                        if (data.outcome === 'win') {
-                            $('#message').text('You won coins! 🎉');
-                        } else {
-                            $('#message').text('You lost coins. Try again!');
-                        }
-                    } else {
-                        $('#message').text(data.message);
-                    }
-                });
-            });
-        });
-    </script>
+  playBtn.onclick = async () => {
+    if (coins < cost) {
+      messageDiv.textContent = "Not enough coins to play!";
+      return;
+    }
+    playBtn.disabled = true;
+    messageDiv.textContent = "Dropping...";
+
+    // Random slot index 0-7
+    const slotIndex = Math.floor(Math.random() * 8);
+    const leftPos = 20 + slotIndex * 40;
+
+    chip.style.transition = "top 2s ease, left 2s ease";
+    chip.style.top = "350px";
+    chip.style.left = leftPos + "px";
+
+    // Wait animation
+    await new Promise(r => setTimeout(r, 2100));
+
+    // Call backend to resolve prize and update coins
+    const response = await fetch('/plinko', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({slot: slotIndex})
+    });
+
+    const result = await response.json();
+
+    if (result.status === "success") {
+      coins = result.new_balance;
+      coinsDisplay.textContent = `Coins: ${coins}`;
+      messageDiv.textContent = `You ${result.outcome}! Won ${result.prize} coins.`;
+    } else {
+      messageDiv.textContent = `Error: ${result.message}`;
+    }
+
+    chip.style.transition = "none";
+    chip.style.top = "10px";
+    chip.style.left = "150px";
+
+    playBtn.disabled = false;
+  };
+</script>
 </body>
 </html>
