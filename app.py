@@ -9,7 +9,7 @@ DB_FILE = 'chat.db'
 COIN_AMOUNT = 2000
 CLAIM_INTERVAL = timedelta(hours=12)
 
-
+# --- DATABASE OPERATIONS ---
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
@@ -20,18 +20,15 @@ def init_db():
         )''')
         conn.commit()
 
-
 def get_user(username):
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT coins, last_claim FROM users WHERE username = ?", (username,))
         return c.fetchone()
 
-
 def create_user(username):
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        # Initialize last_claim to 1 day ago to allow immediate claim
         last_claim_time = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
         c.execute("INSERT OR IGNORE INTO users (username, coins, last_claim) VALUES (?, ?, ?)",
                   (username, COIN_AMOUNT, last_claim_time))
@@ -40,16 +37,13 @@ def create_user(username):
 
 @app.before_request
 def ensure_user():
-    # For demo, assign session username if not set
     if 'username' not in session:
-        session['username'] = 'user1'  # Replace with real login logic
-    # Ensure user exists in DB
+        session['username'] = 'user1'
     create_user(session['username'])
 
 
 @app.route('/')
 def home():
-    # Redirect '/' to '/chat'
     return redirect(url_for('chat'))
 
 
@@ -78,7 +72,6 @@ def claim_coins():
     try:
         last_claim = datetime.strptime(last_claim_str, '%Y-%m-%d %H:%M:%S.%f')
     except ValueError:
-        # Fallback if no microseconds in db string
         last_claim = datetime.strptime(last_claim_str, '%Y-%m-%d %H:%M:%S')
 
     if now - last_claim >= CLAIM_INTERVAL:
@@ -113,11 +106,11 @@ def plinko():
 
     coins -= bet_amount
 
-    # Simulate plinko path: each step is -1 or 1
+    # Simulate plinko path
     path = [random.choice([-1, 1]) for _ in range(rows)]
-    final_slot = path.count(1)  # number of rights chosen
+    final_slot = path.count(1)
 
-    # Example payout table — you can adjust as needed
+    # Example payout table
     payouts = {0: 0, 1: 0, 2: 1.5, 3: 2, 4: 5}
     multiplier = payouts.get(final_slot, 0)
     winnings = int(bet_amount * multiplier)
