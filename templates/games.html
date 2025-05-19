@@ -1,0 +1,69 @@
+""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Public Chat Room</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="navbar">
+        <h1>Public Chat Room</h1>
+        <button onclick="window.location.href='/'" class="chat-button">Chat Room</button>
+        <button onclick="window.location.href='/games'" class="games-button">Games</button>
+    </div>
+
+    <div id="chat-container">
+        <!-- Chat room content goes here -->
+    </div>
+
+    <style>
+        .navbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .games-button, .chat-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
+        }
+        .games-button:hover, .chat-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</body>
+</html>
+
+<!-- New Games Page -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Games Room</title>
+</head>
+<body>
+    <div class="navbar">
+        <button onclick="window.location.href='/'" class="chat-button">Back to Chat Room</button>
+    </div>
+    <h2>Welcome to the Games Room!</h2>
+    <p>Game selection coming soon...</p>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h2 {
+            color: #4CAF50;
+        }
+        p {
+            font-size: 18px;
+        }
+    </style>
+</body>
+</html>""
