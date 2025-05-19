@@ -1,8 +1,8 @@
 import os
 import sqlite3
 import uuid
-from flask import Flask, render_template, request, make_response
-from flask_socketio import SocketIO, emit, disconnect
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
 import eventlet
 eventlet.monkey_patch()
 
@@ -11,9 +11,11 @@ app.config['SECRET_KEY'] = 'secret'
 socketio = SocketIO(app)
 
 DB_FILE = 'chat.db'
-LOCKED = False
 PASSWORD = "100005"
-ROLES = {}  # {user_id: "+", "++", "+++"}
+
+LOCKED = False  # Global chat lock flag
+ROLES = {}      # user_id -> role mapping
+USER_IDS = {}   # sid -> user_id mapping
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -28,69 +30,79 @@ def init_db():
 
 @app.route('/')
 def index():
-    user_id = request.cookies.get("user_id")
-    if not user_id:
-        user_id = str(uuid.uuid4())  # generate permanent ID
-    resp = make_response(render_template('index.html', messages=get_messages(), user_id=user_id))
-    resp.set_cookie("user_id", user_id, max_age=60*60*24*365)  # 1 year
-    return resp
-
-def get_messages():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT id, user_id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-        return c.fetchall()[::-1]  # Show oldest first
+        messages = c.fetchall()[::-1]  # Show oldest first
+    return render_template('index.html', messages=messages)
+
+@socketio.on('connect')
+def on_connect():
+    # Assign a permanent user_id for this connection
+    user_id = str(uuid.uuid4())
+    USER_IDS[request.sid] = user_id
+    emit('your_id', {'user_id': user_id})
+
+@socketio.on('disconnect')
+def on_disconnect():
+    # Remove stored user_id on disconnect
+    if request.sid in USER_IDS:
+        USER_IDS.pop(request.sid)
 
 @socketio.on('send_message')
 def handle_send(data):
-    global LOCKED
-
-    user_id = data.get('user_id')
     username = data.get('username', '').strip() or "anom"
-    message = data.get('message', '').strip()
+    message = data.get('message')
+    user_id = USER_IDS.get(request.sid)
 
-    if not user_id or not message:
-        return  # Ignore invalid messages
+    if not message or message.strip() == "":
+        return  # Ignore empty
 
-    if LOCKED and not message.startswith("/unlock"):
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🔒 Chat is currently locked.'}, room=request.sid)
-        return
-
-    # Command handling
+    # Handle commands
     if message.startswith("/lock"):
+        emit('receive_message', {'id': 0, 'username': username, 'message': f"[{user_id[:8]}] {message}"}, broadcast=True)
+        # Request password from user to lock chat
         emit('request_password', {}, room=request.sid)
         return
 
     if message.startswith("/unlock"):
+        emit('receive_message', {'id': 0, 'username': username, 'message': f"[{user_id[:8]}] {message}"}, broadcast=True)
+        # Expect /unlock 100005 exactly
         if message.strip() == f"/unlock {PASSWORD}":
+            global LOCKED
             LOCKED = False
             emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🔓 Chat has been unlocked!'}, broadcast=True)
         else:
             emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '❌ Incorrect password.'}, room=request.sid)
         return
 
+    if LOCKED:
+        # If locked, no one except "SYSTEM" can send messages (commands handled above)
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🚫 Chat is locked. You cannot send messages.'}, room=request.sid)
+        return
+
     if message == "/role":
+        emit('receive_message', {'id': 0, 'username': username, 'message': f"[{user_id[:8]}] {message}"}, broadcast=True)
         current = ROLES.get(user_id)
         role_display = current if current else "None"
         emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'🎭 Your role is: {role_display}'}, room=request.sid)
         return
 
     if message in ["/role +", "/role ++", "/role +++"]:
+        emit('receive_message', {'id': 0, 'username': username, 'message': f"[{user_id[:8]}] {message}"}, broadcast=True)
         new_role = message.split()[1]
         ROLES[user_id] = new_role
         emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'✅ Role set to {new_role}'}, room=request.sid)
         return
 
-    # Normal message
-    full_message = f"[{user_id[:8]}] {message}"
-
+    # Normal message saving & broadcasting
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("INSERT INTO messages (user_id, username, message) VALUES (?, ?, ?)", (user_id, username, full_message))
+        c.execute("INSERT INTO messages (user_id, username, message) VALUES (?, ?, ?)", (user_id, username, message))
         message_id = c.lastrowid
         conn.commit()
 
-    emit('receive_message', {'id': message_id, 'username': username, 'message': full_message}, broadcast=True)
+    emit('receive_message', {'id': message_id, 'username': username, 'message': f"[{user_id[:8]}] {message}"}, broadcast=True)
 
 @socketio.on('delete_messages')
 def handle_delete_messages(data):
