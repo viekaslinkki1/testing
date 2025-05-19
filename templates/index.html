@@ -34,6 +34,7 @@
     #messages li {
       padding: 8px 12px;
       border-bottom: 1px solid #eee;
+      word-wrap: break-word;
     }
     #messages li:last-child {
       border-bottom: none;
@@ -131,6 +132,7 @@
       padding: 6px 8px;
       border-radius: 3px;
       user-select: text;
+      word-break: break-word;
     }
   </style>
 </head>
@@ -154,8 +156,8 @@
     </ul>
 
     <form id="chat-form">
-      <input type="text" id="username" placeholder="Your name (optional)">
-      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required>
+      <input type="text" id="username" placeholder="Your name (optional)" autocomplete="off" />
+      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required />
       <button type="submit">Send</button>
     </form>
   </div>
@@ -163,17 +165,17 @@
 <script>
   const socket = io();
 
-  // Handle receiving messages
+  // Append received messages to the list and scroll down
   socket.on('receive_message', data => {
     const messages = document.getElementById('messages');
     const li = document.createElement('li');
     li.setAttribute('data-id', data.id);
-    li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
+    li.innerHTML = `<strong>${escapeHtml(data.username)}:</strong> ${escapeHtml(data.message)}`;
     messages.appendChild(li);
     messages.scrollTop = messages.scrollHeight;
   });
 
-  // Handle message deletions
+  // Remove deleted messages by their IDs
   socket.on('messages_deleted', data => {
     const deletedIds = data.deleted_ids;
     deletedIds.forEach(id => {
@@ -184,7 +186,7 @@
     });
   });
 
-  // Submit new message
+  // Send new message or handle delete command
   document.getElementById('chat-form').addEventListener('submit', e => {
     e.preventDefault();
 
@@ -196,8 +198,7 @@
 
     const username = usernameInput.value.trim() || "anom";
 
-    // Check if message is a command
-    if (message.startsWith('/deletemessage ')) {
+    if (message.toLowerCase().startsWith('/deletemessage ')) {
       const parts = message.split(' ');
       const amount = parseInt(parts[1]);
       if (!isNaN(amount) && amount > 0) {
@@ -210,19 +211,26 @@
     messageInput.value = '';
   });
 
-  // Dropdown menu toggle
+  // Toggle dropdown menu visibility
   const dropdownBtn = document.getElementById('dropdown-btn');
   const dropdown = document.getElementById('dropdown');
   dropdownBtn.addEventListener('click', () => {
     dropdown.classList.toggle('show');
   });
 
-  // Close dropdown if clicked outside
+  // Close dropdown if clicking outside of it
   window.addEventListener('click', e => {
     if (!dropdown.contains(e.target)) {
       dropdown.classList.remove('show');
     }
   });
+
+  // Escape HTML to prevent XSS attacks
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 </script>
 </body>
 </html>
