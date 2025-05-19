@@ -1,8 +1,10 @@
 import os
 import sqlite3
-from flask import Flask, render_template
+import uuid
+from flask import Flask, render_template, request, make_response
 from flask_socketio import SocketIO, emit
 import eventlet
+
 eventlet.monkey_patch()
 
 app = Flask(__name__)
@@ -10,9 +12,10 @@ app.config['SECRET_KEY'] = 'secret'
 socketio = SocketIO(app)
 
 DB_FILE = 'chat.db'
-
-chat_locked = False  # Global lock state
-awaiting_password = False  # To track if server is waiting for password after /lock
+user_ids = {}       # sid -> user_id
+user_roles = {}     # user_id -> role
+global_locked = False
+LOCK_PASSWORD = "100005"
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -24,54 +27,82 @@ def init_db():
         )''')
         conn.commit()
 
-@app.route('/')
-def index():
+def get_messages():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
-        messages = c.fetchall()[::-1]  # Show oldest first
-    return render_template('index.html', messages=messages)
+        return c.fetchall()[::-1]
+
+@app.route('/')
+def index():
+    user_id = request.cookies.get('user_id')
+    if not user_id:
+        user_id = str(uuid.uuid4())[:6]
+        resp = make_response(render_template('index.html', messages=get_messages()))
+        resp.set_cookie('user_id', user_id, max_age=60*60*24*365)
+        return resp
+    return render_template('index.html', messages=get_messages())
+
+@socketio.on('connect')
+def handle_connect():
+    user_id = request.cookies.get('user_id')
+    if not user_id:
+        user_id = str(uuid.uuid4())[:6]
+    user_ids[request.sid] = user_id
+    if user_id not in user_roles:
+        user_roles[user_id] = ''
+    emit('your_id', {'user_id': user_id})
+    print(f"[Connected] {request.sid} -> {user_id}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if request.sid in user_ids:
+        print(f"[Disconnected] {request.sid} -> {user_ids[request.sid]}")
+        del user_ids[request.sid]
 
 @socketio.on('send_message')
 def handle_send(data):
-    global chat_locked, awaiting_password
-
-    username = data.get('username', '').strip() or "anom"
+    global global_locked
+    user_id = user_ids.get(request.sid, 'unknown')
     message = data.get('message', '').strip()
 
     if not message:
-        return  # Ignore empty messages
+        return
 
-    # If server is awaiting password input after /lock
-    if awaiting_password:
-        if message == '100005':
-            chat_locked = True
-            awaiting_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is now locked. Nobody can send messages.'}, broadcast=True)
+    # Command: /lock
+    if message.startswith('/lock'):
+        args = message.split()
+        if len(args) == 2 and args[1] == LOCK_PASSWORD:
+            global_locked = True
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🔒 Chat has been locked.'}, broadcast=True)
         else:
-            awaiting_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Lock aborted.'}, broadcast=True)
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '❌ Incorrect password.'}, room=request.sid)
         return
 
-    # If chat is locked
-    if chat_locked:
-        # Only allow /unlock command
-        if message == '/unlock':
-            chat_locked = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat unlocked. You can talk now.'}, broadcast=True)
+    # Command: /unlock
+    if message.startswith('/unlock'):
+        global_locked = False
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🔓 Chat has been unlocked.'}, broadcast=True)
+        return
+
+    # Command: /role
+    if message.startswith('/role'):
+        args = message.split()
+        if len(args) == 2 and args[1] in ['+', '++', '+++']:
+            user_roles[user_id] = args[1]
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'✅ Your role is now {args[1]}'}, room=request.sid)
         else:
-            # Reject all other messages
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is locked. You cannot send messages.'})
+            current = user_roles.get(user_id, '')
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'🎭 Your role is: {current or \"None\"}'}, room=request.sid)
         return
 
-    # If not locked, check for /lock command
-    if message == '/lock':
-        # Ask for password next message
-        awaiting_password = True
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Please enter the password to lock chat:'})
+    # If chat is locked, block all other messages
+    if global_locked:
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '🔒 Chat is currently locked. Try again later.'}, room=request.sid)
         return
 
-    # Normal message: save and broadcast
+    username = f"{user_id}{' ' + user_roles.get(user_id, '') if user_roles.get(user_id) else ''}"
+
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
