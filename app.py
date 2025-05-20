@@ -1,5 +1,4 @@
 import os
-import random
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit
@@ -19,9 +18,8 @@ lock_intent = None  # 'lock' or 'unlock'
 
 PRESET_MESSAGES = {
     "emergency": "Baybars said: do we have any homework?",
-    "emergency2": "Oskar said: i dont think so"
+    "emergency": "Oskar said: i dont think so"
 }
-
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -33,21 +31,16 @@ def init_db():
         )''')
         conn.commit()
 
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        password = request.form.get('password', '').strip()
+        password = request.form.get('password')
         if password == '6767':
-            # assign a random username to session
-            username = f"User{random.randint(1000,9999)}"
             session['logged_in'] = True
-            session['username'] = username
             next_page = request.args.get('next')
             if not next_page or next_page == '/login':
                 return redirect(url_for('index'))
             return redirect(next_page)
-
         elif password == 'emergency':
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
@@ -57,21 +50,17 @@ def login():
                 if ids_to_delete:
                     c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids_to_delete))})", ids_to_delete)
                     conn.commit()
-            username = f"User{random.randint(1000,9999)}"
             session['logged_in'] = True
-            session['username'] = username
             session['emergency_triggered'] = True
             return redirect(url_for('index'))
-
         else:
             return render_template('login.html', error='Incorrect password.')
     return render_template('login.html')
 
-
 @app.route('/')
 def index():
     if not session.get('logged_in'):
-        return redirect(url_for('login', next=request.path))
+        return redirect('/login')  # Redirect to /login explicitly with no params
 
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
@@ -82,23 +71,18 @@ def index():
     if session.pop('emergency_triggered', False):
         emergency_msg = PRESET_MESSAGES.get("emergency")
 
-    username = session.get('username', 'anom')
-    return render_template('index.html', messages=messages, emergency_msg=emergency_msg, username=username)
-
+    return render_template('index.html', messages=messages, emergency_msg=emergency_msg)
 
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    session.pop('username', None)
     return redirect(url_for('login'))
-
 
 @socketio.on('send_message')
 def handle_send(data):
     global chat_locked, awaiting_password, lock_intent
 
-    # Use session username instead of client-provided username
-    username = session.get('username', 'anom')
+    username = data.get('username', '').strip() or "anom"
     message = data.get('message', '').strip()
 
     if not message:
@@ -148,7 +132,6 @@ def handle_send(data):
 
     emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
 
-
 @socketio.on('delete_messages')
 def handle_delete_messages(data):
     amount = data.get('amount', 0)
@@ -166,7 +149,6 @@ def handle_delete_messages(data):
             conn.commit()
 
     emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
-
 
 if __name__ == '__main__':
     init_db()
