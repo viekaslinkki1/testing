@@ -5,9 +5,6 @@ eventlet.monkey_patch()
 from flask import Flask, render_template, request, redirect, session, g
 from flask_socketio import SocketIO, emit
 import sqlite3
-from datetime import datetime, timedelta
-import random
-import string
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -35,11 +32,6 @@ def init_db():
             message TEXT NOT NULL
         )
     ''')
-    db.execute('''
-        CREATE TABLE IF NOT EXISTS login (
-            password TEXT NOT NULL
-        )
-    ''')
     db.commit()
 
 @app.route('/')
@@ -48,16 +40,14 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    db = get_db()
     if request.method == 'POST':
         password = request.form['password']
-        cur = db.execute('SELECT password FROM login')
-        data = cur.fetchone()
-        if data and password == data[0]:
+        if password == "pretzel":
             session['authenticated'] = True
             return redirect('/chat')
-        return render_template('login.html', error="Wrong password.")
-    return render_template('login.html')
+        else:
+            return render_template('login.html', error="Wrong password.")
+    return render_template('login.html', error=None)
 
 @app.route('/chat')
 def chat():
