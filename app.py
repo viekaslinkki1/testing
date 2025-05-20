@@ -3,6 +3,7 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit
 import eventlet
+import eventlet.wsgi
 
 eventlet.monkey_patch()
 
@@ -21,6 +22,7 @@ PRESET_MESSAGES = {
     "emergency": "Oskar said: i dont think so"
 }
 
+
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
@@ -30,6 +32,13 @@ def init_db():
             message TEXT
         )''')
         conn.commit()
+
+
+@app.route('/')
+def root():
+    # Redirect '/' to '/login' always
+    return redirect(url_for('login', next=request.path))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -57,26 +66,30 @@ def login():
             return render_template('login.html', error='Incorrect password.')
     return render_template('login.html')
 
-@app.route('/')
+
+@app.route('/index')
 def index():
     if not session.get('logged_in'):
-        return redirect('/login')  # Redirect to /login explicitly with no params
+        return redirect(url_for('login', next=request.path))
 
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
         messages = c.fetchall()[::-1]
 
+    # Show emergency message if triggered
     emergency_msg = None
     if session.pop('emergency_triggered', False):
         emergency_msg = PRESET_MESSAGES.get("emergency")
 
     return render_template('index.html', messages=messages, emergency_msg=emergency_msg)
 
+
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
     return redirect(url_for('login'))
+
 
 @socketio.on('send_message')
 def handle_send(data):
@@ -132,6 +145,7 @@ def handle_send(data):
 
     emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
 
+
 @socketio.on('delete_messages')
 def handle_delete_messages(data):
     amount = data.get('amount', 0)
@@ -150,6 +164,7 @@ def handle_delete_messages(data):
 
     emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
 
+
 if __name__ == '__main__':
     init_db()
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    eventlet.wsgi.server(eventlet.listen(('', int(os.environ.get('PORT', 5000)))), app)
