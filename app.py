@@ -17,7 +17,7 @@ awaiting_password = False
 lock_intent = None  # 'lock' or 'unlock'
 
 PRESET_MESSAGES = {
-    "emergency": "Baybars said: do we have any homework?"
+    "emergency": "Baybars said: do we have any homework?",
     "emergency": "Oskar said: i dont think so"
 }
 
