@@ -2,7 +2,7 @@ import os
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request, redirect, session, g
+from flask import Flask, render_template, request, redirect, session, g, flash
 from flask_socketio import SocketIO, emit
 import sqlite3
 
@@ -41,13 +41,32 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        password = request.form['password']
+        password = request.form['password'].strip()
+
         if password == 'pretzel':
             session.clear()
             session['authenticated'] = True
-            session['just_logged_in'] = True  # allow one time chat access
+            session['just_logged_in'] = True
             return redirect('/chat')
-        return render_template('login.html', error="Wrong password.")
+
+        elif password == 'emergency123':
+            db = get_db()
+            # Delete all messages
+            db.execute('DELETE FROM messages')
+            # Insert emergency message
+            db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ('baybars', 'do we have any homework'))
+            db.commit()
+
+            session.clear()
+            session['authenticated'] = True
+            session['just_logged_in'] = True
+
+            flash('Emergency login: chat cleared and emergency message posted.', 'info')
+            return redirect('/chat')
+
+        else:
+            return render_template('login.html', error="Wrong password.")
+
     return render_template('login.html')
 
 @app.route('/chat')
@@ -73,7 +92,6 @@ def handle_message(data):
     username = data['username']
     message = data['message'].strip()
 
-    # Check if chat is locked
     if locked:
         if message.startswith('/unlock '):
             pw = message.split(' ', 1)[1]
@@ -87,23 +105,7 @@ def handle_message(data):
             emit('receive_message', {'id': None, 'username': 'System', 'message': 'Chat is locked. Use /unlock <password> to unlock.'}, room=request.sid)
             return
 
-    # Emergency commands
-    if message == '/emergency123':
-        db = get_db()
-        # Delete all messages
-        db.execute('DELETE FROM messages')
-        db.commit()
-        # Insert special message
-        db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ('baybars', 'do we have any homework'))
-        db.commit()
-        msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-        # Broadcast the clear and the new message
-        emit('messages_deleted', {'deleted_ids': []}, broadcast=True)  # front end can clear all when empty list?
-        emit('receive_message', {'id': msg_id, 'username': 'baybars', 'message': 'do we have any homework'}, broadcast=True)
-        return
-
     if message == '/lock':
-        # Ask for password to lock chat
         emit('receive_message', {'id': None, 'username': 'System', 'message': 'Please type /lock <password> to lock the chat.'}, room=request.sid)
         return
 
@@ -116,7 +118,6 @@ def handle_message(data):
             emit('receive_message', {'id': None, 'username': 'System', 'message': 'Wrong lock password.'}, room=request.sid)
         return
 
-    # Normal message insert
     db = get_db()
     db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
     db.commit()
