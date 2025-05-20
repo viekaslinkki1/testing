@@ -14,7 +14,7 @@ socketio = SocketIO(app)
 DB_FILE = 'chat.db'
 
 chat_locked = False
-awaiting_password = True
+awaiting_password = False
 lock_intent = None  # 'lock' or 'unlock'
 
 PRESET_MESSAGES = {
