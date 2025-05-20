@@ -12,7 +12,10 @@ app = Flask(__name__)
 socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
+
+# Main and emergency password
 UNIVERSAL_PASSWORD = "pretzel"
+EMERGENCY_PASSWORD = "emergency123"
 
 def get_db():
     if 'db' not in g:
@@ -44,19 +47,32 @@ def index():
 def login():
     if request.method == 'POST':
         password = request.form['password']
-        if password == UNIVERSAL_PASSWORD:
-            return render_template('index.html', messages=get_messages())
+        db = get_db()
+
+        if password == EMERGENCY_PASSWORD:
+            # Delete all messages
+            db.execute('DELETE FROM messages')
+            db.commit()
+
+            # Add emergency message
+            db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ("baybars", "do we have any homework"))
+            db.commit()
+
+            cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
+            messages = cur.fetchall()
+            return render_template('index.html', messages=messages)
+
+        elif password == UNIVERSAL_PASSWORD:
+            cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
+            messages = cur.fetchall()
+            return render_template('index.html', messages=messages)
+
         return render_template('login.html', error="Wrong password.")
     return render_template('login.html')
 
 @app.route('/chat')
 def chat():
-    return redirect('/login')  # always force login
-
-def get_messages():
-    db = get_db()
-    cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
-    return cur.fetchall()
+    return redirect('/login')  # always force login first
 
 @socketio.on('send_message')
 def handle_message(data):
