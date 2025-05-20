@@ -2,16 +2,17 @@ import os
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request, redirect, session, g
+from flask import Flask, render_template, request, redirect
 from flask_socketio import SocketIO, emit
 import sqlite3
+from datetime import datetime
+from flask import g
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
 socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
-UNIVERSAL_PASSWORD = 'pretzel'  # <- All users use this
+UNIVERSAL_PASSWORD = "pretzel"
 
 def get_db():
     if 'db' not in g:
@@ -44,19 +45,18 @@ def login():
     if request.method == 'POST':
         password = request.form['password']
         if password == UNIVERSAL_PASSWORD:
-            session['authenticated'] = True
-            return redirect('/chat')
+            return render_template('index.html', messages=get_messages())
         return render_template('login.html', error="Wrong password.")
     return render_template('login.html')
 
 @app.route('/chat')
 def chat():
-    if not session.get('authenticated'):
-        return redirect('/login')  # <- blocks manual access
+    return redirect('/login')  # always force login
+
+def get_messages():
     db = get_db()
     cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
-    messages = cur.fetchall()
-    return render_template('index.html', messages=messages)
+    return cur.fetchall()
 
 @socketio.on('send_message')
 def handle_message(data):
