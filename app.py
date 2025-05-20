@@ -1,95 +1,54 @@
-import os
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_socketio import SocketIO, emit
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request, redirect, session, g
-from flask_socketio import SocketIO, emit
-import sqlite3
-from datetime import datetime, timedelta
-import random
-import string
-
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = 'your-secret-key'
 socketio = SocketIO(app)
 
-DB_PATH = 'chat.db'
-
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect(DB_PATH)
-    return g.db
-
-@app.teardown_appcontext
-def close_db(error):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
-
-def init_db():
-    db = get_db()
-    db.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            message TEXT NOT NULL
-        )
-    ''')
-    db.execute('''
-        CREATE TABLE IF NOT EXISTS login (
-            password TEXT NOT NULL
-        )
-    ''')
-    db.commit()
+messages = []
+message_id = 1
 
 @app.route('/')
-def index():
-    return redirect('/login')
+def home():
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    db = get_db()
+    error = None
     if request.method == 'POST':
-        password = request.form['password']
-        cur = db.execute('SELECT password FROM login')
-        data = cur.fetchone()
-        if data and password == data[0]:
-            session['authenticated'] = True
-            return redirect('/chat')
-        return render_template('login.html', error="Wrong password.")
-    return render_template('login.html')
+        if request.form['password'] == 'secret':  # change 'secret' to your real password
+            session['logged_in'] = True
+            return redirect(url_for('chat'))
+        else:
+            error = 'Incorrect password'
+    return render_template('login.html', error=error)
 
 @app.route('/chat')
 def chat():
-    if not session.get('authenticated'):
-        return redirect('/login')
-    db = get_db()
-    cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
-    messages = cur.fetchall()
-    return render_template('index.html', messages=messages)
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return render_template('chat.html', messages=messages)
 
 @socketio.on('send_message')
-def handle_message(data):
-    username = data['username']
-    message = data['message']
-    db = get_db()
-    db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
-    db.commit()
-    msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-    emit('receive_message', {'id': msg_id, 'username': username, 'message': message}, broadcast=True)
+def handle_send_message(data):
+    global message_id
+    msg = {'id': message_id, 'username': data['username'], 'message': data['message']}
+    messages.append((message_id, data['username'], data['message']))
+    emit('receive_message', msg, broadcast=True)
+    message_id += 1
 
 @socketio.on('delete_messages')
-def delete_messages(data):
-    amount = int(data.get('amount', 0))
-    db = get_db()
-    cur = db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT ?', (amount,))
-    rows = cur.fetchall()
-    deleted_ids = [r[0] for r in rows]
-    db.executemany('DELETE FROM messages WHERE id=?', [(i,) for i in deleted_ids])
-    db.commit()
+def handle_delete_messages(data):
+    global messages
+    amount = data.get('amount', 0)
+    if amount <= 0:
+        return
+    deleted = messages[-amount:]
+    messages = messages[:-amount]
+    deleted_ids = [msg[0] for msg in deleted]
     emit('messages_deleted', {'deleted_ids': deleted_ids}, broadcast=True)
 
 if __name__ == '__main__':
-    with app.app_context():
-        init_db()
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    socketio.run(app, host='0.0.0.0', port=10000)
