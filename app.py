@@ -2,19 +2,16 @@ import os
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, session, g
 from flask_socketio import SocketIO, emit
 import sqlite3
-from flask import g
 
 app = Flask(__name__)
+app.secret_key = 'your_secret_key'
 socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
-
-# Passwords
-UNIVERSAL_PASSWORD = "pretzel"
-EMERGENCY_PASSWORD = "emergency123"
+LOCK_PASSWORD = "100005"
 
 def get_db():
     if 'db' not in g:
@@ -36,6 +33,23 @@ def init_db():
             message TEXT NOT NULL
         )
     ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS login (
+            password TEXT NOT NULL
+        )
+    ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS status (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+    # Default password if empty
+    if not db.execute('SELECT * FROM login').fetchone():
+        db.execute('INSERT INTO login (password) VALUES (?)', ('pretzel',))
+    # Default lock status
+    if not db.execute("SELECT * FROM status WHERE key = 'locked'").fetchone():
+        db.execute("INSERT INTO status (key, value) VALUES ('locked', 'false')")
     db.commit()
 
 @app.route('/')
@@ -44,41 +58,68 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    db = get_db()
     if request.method == 'POST':
         password = request.form['password']
-        db = get_db()
-
-        if password == EMERGENCY_PASSWORD:
-            # Clear all messages
-            db.execute('DELETE FROM messages')
-            db.commit()
-
-            # Add emergency message
-            db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ("baybars", "do we have any homework"))
-            db.commit()
-
-            # Get updated messages
-            cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
-            messages = cur.fetchall()
-            return render_template('index.html', messages=messages)
-
-        elif password == UNIVERSAL_PASSWORD:
-            cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
-            messages = cur.fetchall()
-            return render_template('index.html', messages=messages)
-
+        data = db.execute('SELECT password FROM login').fetchone()
+        if data and password == data[0]:
+            session['authenticated'] = True
+            return redirect('/chat')
         return render_template('login.html', error="Wrong password.")
     return render_template('login.html')
 
 @app.route('/chat')
 def chat():
-    return redirect('/login')  # block direct access to /chat
+    if not session.get('authenticated'):
+        return redirect('/login')
+    db = get_db()
+    cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
+    messages = cur.fetchall()
+    return render_template('index.html', messages=messages)
+
+@app.route('/lock', methods=['GET', 'POST'])
+def lock():
+    if request.method == 'POST':
+        password = request.form['password']
+        if password == LOCK_PASSWORD:
+            db = get_db()
+            db.execute("UPDATE status SET value='true' WHERE key='locked'")
+            db.commit()
+            return "Chat locked successfully."
+        return "Wrong password."
+    return '''
+        <form method="post">
+            Password: <input type="password" name="password">
+            <input type="submit" value="Lock Chat">
+        </form>
+    '''
+
+@app.route('/unlock', methods=['GET', 'POST'])
+def unlock():
+    if request.method == 'POST':
+        password = request.form['password']
+        if password == LOCK_PASSWORD:
+            db = get_db()
+            db.execute("UPDATE status SET value='false' WHERE key='locked'")
+            db.commit()
+            return "Chat unlocked successfully."
+        return "Wrong password."
+    return '''
+        <form method="post">
+            Password: <input type="password" name="password">
+            <input type="submit" value="Unlock Chat">
+        </form>
+    '''
 
 @socketio.on('send_message')
 def handle_message(data):
+    db = get_db()
+    lock_status = db.execute("SELECT value FROM status WHERE key='locked'").fetchone()
+    if lock_status and lock_status[0] == 'true':
+        emit('receive_message', {'id': -1, 'username': 'System', 'message': 'Chat is currently locked.'}, room=request.sid)
+        return
     username = data['username']
     message = data['message']
-    db = get_db()
     db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
     db.commit()
     msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
