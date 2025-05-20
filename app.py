@@ -1,20 +1,30 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory
-from flask_socketio import SocketIO, emit
-import uuid
-import sqlite3
 import os
+import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_socketio import SocketIO, emit
+import eventlet
+from functools import wraps
+
+eventlet.monkey_patch()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secretkeyhere'  # Change to something secure
+app.config['SECRET_KEY'] = 'secret'
 socketio = SocketIO(app)
 
-PASSWORD_ON_LOGIN = "6767"
-PASSWORD_ROLE_CHANGE = "100005"
-
-USER_IDS = {}
-ROLES = {}
-
 DB_FILE = 'chat.db'
+
+chat_locked = False
+awaiting_password = False
+awaiting_unlock_password = False
+
+# Emergency messages with sender and message
+emergency_messages = [
+    {"sender": "Baybars", "text": "Do we have any homework?"},
+    {"sender": "Gen", "text": "Idk"},
+    {"sender": "Oskar", "text": "i thinkwe have some brainpop"},
+    {"sender": "Baybars", "text": "ok thanks"}
+]
+
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -26,106 +36,135 @@ def init_db():
         )''')
         conn.commit()
 
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        password = request.form.get('password', '')
-        if password == PASSWORD_ON_LOGIN:
+        password = request.form.get('password')
+        if password == '6767':
             session['logged_in'] = True
-            return redirect(url_for('index'))
+        elif password == 'emergency':
+            session['logged_in'] = True
+            # Delete last 50 messages
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT 50")
+                rows = c.fetchall()
+                ids = [r[0] for r in rows]
+                if ids:
+                    c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids))})", ids)
+                    conn.commit()
+            # Send emergency message
+            preset = emergency_messages[0]  # You can change index or implement selection
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (preset["sender"], preset["text"]))
+                conn.commit()
         else:
-            return render_template('login.html', error="Incorrect password, try again.")
+            return render_template('login.html', error='Incorrect password.')
+
+        next_page = request.args.get('next')
+        return redirect(next_page or url_for('index'))
+
     return render_template('login.html')
+
+
+@app.route('/')
+@login_required
+def index():
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
+        messages = c.fetchall()[::-1]
+    return render_template('index.html', messages=messages)
+
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    session.pop('logged_in', None)
     return redirect(url_for('login'))
 
-@app.route('/')
-def index():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    # Serve your existing index.html without modification
-    return send_from_directory('templates', 'index.html')
-
-@socketio.on('connect')
-def on_connect():
-    if not session.get('logged_in'):
-        return False  # reject connection if not logged in
-    sid = request.sid
-    if sid not in USER_IDS:
-        USER_IDS[sid] = str(uuid.uuid4())[:8]
 
 @socketio.on('send_message')
 def handle_send(data):
-    sid = request.sid
-    if sid not in USER_IDS:
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '⛔ You must be logged in to chat.'}, room=sid)
-        return
+    global chat_locked, awaiting_password, awaiting_unlock_password
 
-    userid = USER_IDS[sid]
+    username = data.get('username', '').strip() or "anom"
     message = data.get('message', '').strip()
+
     if not message:
         return
 
-    # Role command handling (same as before)
-    if message.startswith('/role'):
-        parts = message.split()
-        if len(parts) == 1:
-            current = ROLES.get(userid, None)
-            role_display = current if current else "None"
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'🎭 Your role is: {role_display}'}, room=sid)
-            return
-        elif len(parts) == 2 and parts[1] in ['+', '++', '+++']:
-            ROLES[userid] = parts[1]
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'✅ Your role set to {parts[1]}'}, room=sid)
-            return
-        elif len(parts) == 3 and parts[1] in ['+', '++', '+++']:
-            role_to_set = parts[1]
-            target_prefix = parts[2]
-            socketio.emit('request_role_password', {'msg': f'Enter password to set role {role_to_set} for user starting with {target_prefix}', 'role': role_to_set, 'target': target_prefix}, room=sid)
-            return
+    if awaiting_password:
+        if message == '100005':
+            chat_locked = True
+            awaiting_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is now locked.'}, broadcast=True)
         else:
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '⚠️ Invalid /role command format.'}, room=sid)
-            return
+            awaiting_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Lock aborted.'}, broadcast=True)
+        return
 
-    # Save message to DB
+    if awaiting_unlock_password:
+        if message == '100005':
+            chat_locked = False
+            awaiting_unlock_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat unlocked.'}, broadcast=True)
+        else:
+            awaiting_unlock_password = False
+            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Unlock aborted.'}, broadcast=True)
+        return
+
+    if message == '/lock':
+        awaiting_password = True
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Enter password to lock chat:'})
+        return
+
+    if message == '/unlock':
+        awaiting_unlock_password = True
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Enter password to unlock chat:'})
+        return
+
+    if chat_locked:
+        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is locked. You cannot send messages.'})
+        return
+
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (userid, message))
+        c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (username, message))
         message_id = c.lastrowid
         conn.commit()
 
-    emit('receive_message', {'id': message_id, 'username': userid, 'message': message}, broadcast=True)
+    emit('receive_message', {'id': message_id, 'username': username, 'message': message}, broadcast=True)
 
-@socketio.on('submit_role_password')
-def handle_role_password(data):
-    sid = request.sid
-    if sid not in USER_IDS:
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '⛔ You must be logged in to chat.'}, room=sid)
+
+@socketio.on('delete_messages')
+def handle_delete_messages(data):
+    amount = data.get('amount', 0)
+    if not isinstance(amount, int) or amount <= 0:
         return
 
-    entered_password = data.get('password', '')
-    role_to_set = data.get('role', '')
-    target_prefix = data.get('target', '')
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT ?", (amount,))
+        rows = c.fetchall()
+        ids_to_delete = [row[0] for row in rows]
 
-    if entered_password != PASSWORD_ROLE_CHANGE:
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': '❌ Wrong password for role change.'}, room=sid)
-        return
+        if ids_to_delete:
+            c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids_to_delete))})", ids_to_delete)
+            conn.commit()
 
-    target_id = None
-    for uid in USER_IDS.values():
-        if uid.startswith(target_prefix):
-            target_id = uid
-            break
+    emit('messages_deleted', {'deleted_ids': ids_to_delete}, broadcast=True)
 
-    if target_id is None:
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'❌ No user found with ID starting with {target_prefix}.'}, room=sid)
-        return
-
-    ROLES[target_id] = role_to_set
-    emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': f'✅ Role {role_to_set} set for user {target_id}.'}, broadcast=True)
 
 if __name__ == '__main__':
     init_db()
