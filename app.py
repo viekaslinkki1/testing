@@ -7,11 +7,11 @@ from flask_socketio import SocketIO, emit
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Change to something secure in production
+app.secret_key = 'your_secret_key'
 socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
-UNIVERSAL_PASSWORD = 'pretzel'
+UNIVERSAL_PASSWORD = 'pretzel'  # <- All users use this
 
 def get_db():
     if 'db' not in g:
@@ -49,15 +49,10 @@ def login():
         return render_template('login.html', error="Wrong password.")
     return render_template('login.html')
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect('/login')
-
 @app.route('/chat')
 def chat():
     if not session.get('authenticated'):
-        return redirect('/login')
+        return redirect('/login')  # <- blocks manual access
     db = get_db()
     cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
     messages = cur.fetchall()
