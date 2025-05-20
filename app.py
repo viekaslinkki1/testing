@@ -5,7 +5,6 @@ eventlet.monkey_patch()
 from flask import Flask, render_template, request, redirect
 from flask_socketio import SocketIO, emit
 import sqlite3
-from datetime import datetime
 from flask import g
 
 app = Flask(__name__)
@@ -13,7 +12,7 @@ socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
 
-# Main and emergency password
+# Passwords
 UNIVERSAL_PASSWORD = "pretzel"
 EMERGENCY_PASSWORD = "emergency123"
 
@@ -50,7 +49,7 @@ def login():
         db = get_db()
 
         if password == EMERGENCY_PASSWORD:
-            # Delete all messages
+            # Clear all messages
             db.execute('DELETE FROM messages')
             db.commit()
 
@@ -58,6 +57,7 @@ def login():
             db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ("baybars", "do we have any homework"))
             db.commit()
 
+            # Get updated messages
             cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
             messages = cur.fetchall()
             return render_template('index.html', messages=messages)
@@ -72,7 +72,7 @@ def login():
 
 @app.route('/chat')
 def chat():
-    return redirect('/login')  # always force login first
+    return redirect('/login')  # block direct access to /chat
 
 @socketio.on('send_message')
 def handle_message(data):
