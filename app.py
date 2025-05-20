@@ -167,4 +167,5 @@ def handle_delete_messages(data):
 
 if __name__ == '__main__':
     init_db()
-    eventlet.wsgi.server(eventlet.listen(('', int(os.environ.get('PORT', 5000)))), app)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
