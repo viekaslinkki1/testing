@@ -51,12 +51,17 @@ def login():
 
 @app.route('/chat')
 def chat():
-    if not session.get('authenticated'):
+    if 'authenticated' not in session or not session['authenticated']:
         return redirect('/login')
     db = get_db()
     cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
     messages = cur.fetchall()
     return render_template('index.html', messages=messages)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
 
 @socketio.on('send_message')
 def handle_message(data):
