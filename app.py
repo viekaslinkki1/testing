@@ -3,7 +3,6 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit
 import eventlet
-from functools import wraps
 
 eventlet.monkey_patch()
 
@@ -15,15 +14,12 @@ DB_FILE = 'chat.db'
 
 chat_locked = False
 awaiting_password = False
-awaiting_unlock_password = False
+lock_intent = None  # 'lock' or 'unlock'
 
-# Emergency messages with sender and message
-emergency_messages = [
-    {"sender": "Baybars", "text": "Do we have any homework?"},
-    {"sender": "Gen", "text": "Idk"},
-    {"sender": "Oskar", "text": "i thinkwe have some brainpop"},
-    {"sender": "Baybars", "text": "ok thanks"}
-]
+PRESET_MESSAGES = {
+    "emergency": "Baybars said: do we have any homework?"
+    "emergency": "Oskar said: i dont think so"
+}
 
 
 def init_db():
@@ -37,55 +33,49 @@ def init_db():
         conn.commit()
 
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('logged_in'):
-            return redirect(url_for('login', next=request.path))
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         password = request.form.get('password')
         if password == '6767':
             session['logged_in'] = True
+            next_page = request.args.get('next')
+            if not next_page or next_page == '/login':
+                return redirect(url_for('index'))
+            return redirect(next_page)
         elif password == 'emergency':
-            session['logged_in'] = True
-            # Delete last 50 messages
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
                 c.execute("SELECT id FROM messages ORDER BY id DESC LIMIT 50")
                 rows = c.fetchall()
-                ids = [r[0] for r in rows]
-                if ids:
-                    c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids))})", ids)
+                ids_to_delete = [row[0] for row in rows]
+                if ids_to_delete:
+                    c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids_to_delete))})", ids_to_delete)
                     conn.commit()
-            # Send emergency message
-            preset = emergency_messages[0]  # You can change index or implement selection
-            with sqlite3.connect(DB_FILE) as conn:
-                c = conn.cursor()
-                c.execute("INSERT INTO messages (username, message) VALUES (?, ?)", (preset["sender"], preset["text"]))
-                conn.commit()
+            session['logged_in'] = True
+            session['emergency_triggered'] = True
+            return redirect(url_for('index'))
         else:
             return render_template('login.html', error='Incorrect password.')
-
-        next_page = request.args.get('next')
-        return redirect(next_page or url_for('index'))
-
     return render_template('login.html')
 
 
 @app.route('/')
-@login_required
 def index():
+    if not session.get('logged_in'):
+        return redirect(url_for('login', next=request.path))
+
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
         messages = c.fetchall()[::-1]
-    return render_template('index.html', messages=messages)
+
+    # Show emergency message if triggered
+    emergency_msg = None
+    if session.pop('emergency_triggered', False):
+        emergency_msg = PRESET_MESSAGES.get("emergency")
+
+    return render_template('index.html', messages=messages, emergency_msg=emergency_msg)
 
 
 @app.route('/logout')
@@ -96,7 +86,7 @@ def logout():
 
 @socketio.on('send_message')
 def handle_send(data):
-    global chat_locked, awaiting_password, awaiting_unlock_password
+    global chat_locked, awaiting_password, lock_intent
 
     username = data.get('username', '').strip() or "anom"
     message = data.get('message', '').strip()
@@ -106,36 +96,38 @@ def handle_send(data):
 
     if awaiting_password:
         if message == '100005':
-            chat_locked = True
-            awaiting_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is now locked.'}, broadcast=True)
+            chat_locked = (lock_intent == 'lock')
+            status = 'locked' if chat_locked else 'unlocked'
+            emit('receive_message', {
+                'id': 0, 'username': 'SYSTEM',
+                'message': f'Chat is now {status}.'
+            }, broadcast=True)
         else:
-            awaiting_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Lock aborted.'}, broadcast=True)
+            emit('receive_message', {
+                'id': 0, 'username': 'SYSTEM',
+                'message': 'Incorrect password. Action aborted.'
+            }, broadcast=True)
+        awaiting_password = False
+        lock_intent = None
         return
 
-    if awaiting_unlock_password:
-        if message == '100005':
-            chat_locked = False
-            awaiting_unlock_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat unlocked.'}, broadcast=True)
-        else:
-            awaiting_unlock_password = False
-            emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Incorrect password. Unlock aborted.'}, broadcast=True)
+    if chat_locked:
+        emit('receive_message', {
+            'id': 0, 'username': 'SYSTEM',
+            'message': 'Chat is locked. You cannot send messages.'
+        })
         return
 
     if message == '/lock':
         awaiting_password = True
+        lock_intent = 'lock'
         emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Enter password to lock chat:'})
         return
 
     if message == '/unlock':
-        awaiting_unlock_password = True
+        awaiting_password = True
+        lock_intent = 'unlock'
         emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Enter password to unlock chat:'})
-        return
-
-    if chat_locked:
-        emit('receive_message', {'id': 0, 'username': 'SYSTEM', 'message': 'Chat is locked. You cannot send messages.'})
         return
 
     with sqlite3.connect(DB_FILE) as conn:
