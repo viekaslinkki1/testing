@@ -1,4 +1,5 @@
 import os
+import random
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit
@@ -18,7 +19,7 @@ lock_intent = None  # 'lock' or 'unlock'
 
 PRESET_MESSAGES = {
     "emergency": "Baybars said: do we have any homework?",
-    "emergency": "Oskar said: i dont think so"
+    "emergency2": "Oskar said: i dont think so"
 }
 
 
@@ -36,13 +37,17 @@ def init_db():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        password = request.form.get('password')
+        password = request.form.get('password', '').strip()
         if password == '6767':
+            # assign a random username to session
+            username = f"User{random.randint(1000,9999)}"
             session['logged_in'] = True
+            session['username'] = username
             next_page = request.args.get('next')
             if not next_page or next_page == '/login':
                 return redirect(url_for('index'))
             return redirect(next_page)
+
         elif password == 'emergency':
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
@@ -52,9 +57,12 @@ def login():
                 if ids_to_delete:
                     c.execute(f"DELETE FROM messages WHERE id IN ({','.join(['?']*len(ids_to_delete))})", ids_to_delete)
                     conn.commit()
+            username = f"User{random.randint(1000,9999)}"
             session['logged_in'] = True
+            session['username'] = username
             session['emergency_triggered'] = True
             return redirect(url_for('index'))
+
         else:
             return render_template('login.html', error='Incorrect password.')
     return render_template('login.html')
@@ -70,17 +78,18 @@ def index():
         c.execute("SELECT id, username, message FROM messages ORDER BY id DESC LIMIT 50")
         messages = c.fetchall()[::-1]
 
-    # Show emergency message if triggered
     emergency_msg = None
     if session.pop('emergency_triggered', False):
         emergency_msg = PRESET_MESSAGES.get("emergency")
 
-    return render_template('index.html', messages=messages, emergency_msg=emergency_msg)
+    username = session.get('username', 'anom')
+    return render_template('index.html', messages=messages, emergency_msg=emergency_msg, username=username)
 
 
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
+    session.pop('username', None)
     return redirect(url_for('login'))
 
 
@@ -88,7 +97,8 @@ def logout():
 def handle_send(data):
     global chat_locked, awaiting_password, lock_intent
 
-    username = data.get('username', '').strip() or "anom"
+    # Use session username instead of client-provided username
+    username = session.get('username', 'anom')
     message = data.get('message', '').strip()
 
     if not message:
