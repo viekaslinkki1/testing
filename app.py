@@ -42,31 +42,23 @@ def index():
 def login():
     if request.method == 'POST':
         password = request.form['password'].strip()
-
         if password == 'pretzel':
             session.clear()
             session['authenticated'] = True
             session['just_logged_in'] = True
             return redirect('/chat')
-
         elif password == 'emergency123':
             db = get_db()
-            # Delete all messages
             db.execute('DELETE FROM messages')
-            # Insert emergency message
             db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ('baybars', 'do we have any homework'))
             db.commit()
-
             session.clear()
             session['authenticated'] = True
             session['just_logged_in'] = True
-
             flash('Emergency login: chat cleared and emergency message posted.', 'info')
             return redirect('/chat')
-
         else:
             return render_template('login.html', error="Wrong password.")
-
     return render_template('login.html')
 
 @app.route('/chat')
@@ -76,8 +68,7 @@ def chat():
     if session.get('just_logged_in') != True:
         session.clear()
         return redirect('/login')
-    session['just_logged_in'] = False  # reset after first access
-
+    session['just_logged_in'] = False
     db = get_db()
     cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
     messages = cur.fetchall()
@@ -118,21 +109,23 @@ def handle_message(data):
             emit('receive_message', {'id': None, 'username': 'System', 'message': 'Wrong lock password.'}, room=request.sid)
         return
 
-    db = get_db()
+    db = sqlite3.connect(DB_PATH)
     db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
     db.commit()
     msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    db.close()
     emit('receive_message', {'id': msg_id, 'username': username, 'message': message}, broadcast=True)
 
 @socketio.on('delete_messages')
 def delete_messages(data):
     amount = int(data.get('amount', 0))
-    db = get_db()
+    db = sqlite3.connect(DB_PATH)
     cur = db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT ?', (amount,))
     rows = cur.fetchall()
     deleted_ids = [r[0] for r in rows]
     db.executemany('DELETE FROM messages WHERE id=?', [(i,) for i in deleted_ids])
     db.commit()
+    db.close()
     emit('messages_deleted', {'deleted_ids': deleted_ids}, broadcast=True)
 
 if __name__ == '__main__':
