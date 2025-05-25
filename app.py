@@ -1,207 +1,138 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Public Chat Room</title>
-  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 30px;
-      background: #f4f4f4;
-    }
-    #chat-container {
-      max-width: 700px;
-      margin: 0 auto;
-      background: white;
-      border-radius: 8px;
-      padding: 20px;
-      box-shadow: 0 0 8px rgba(0,0,0,0.1);
-      display: flex;
-      flex-direction: column;
-      height: 80vh;
-      position: relative;
-    }
-    #messages {
-      flex-grow: 1;
-      overflow-y: auto;
-      list-style: none;
-      padding: 0;
-      margin-bottom: 15px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background: #fafafa;
-    }
-    #messages li {
-      padding: 8px 12px;
-      border-bottom: 1px solid #eee;
-    }
-    #messages li:last-child {
-      border-bottom: none;
-    }
-    #chat-form {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    #username {
-      width: 120px;
-      padding: 10px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      outline: none;
-    }
-    #message {
-      flex-grow: 1;
-      padding: 10px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      outline: none;
-    }
-    button {
-      padding: 0 20px;
-      background-color: #007bff;
-      border: none;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-      height: 40px;
-    }
-    .msg-id {
-      font-size: 0.8em;
-      color: #777;
-      margin-left: 10px;
-    }
-    .dropdown {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      user-select: none;
-    }
-    .dropdown > button {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      padding: 10px 14px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      right: 0;
-      background-color: white;
-      min-width: 220px;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-      border-radius: 4px;
-      padding: 12px 16px;
-      z-index: 1000;
-      font-size: 14px;
-      color: #333;
-    }
-    .dropdown.show .dropdown-content {
-      display: block;
-    }
-    .dropdown-content h4 {
-      margin-top: 0;
-      margin-bottom: 8px;
-      font-weight: bold;
-      border-bottom: 1px solid #eee;
-      padding-bottom: 4px;
-    }
-    .dropdown-content p {
-      margin: 6px 0;
-      font-family: monospace;
-      background: #f0f0f0;
-      padding: 6px 8px;
-      border-radius: 3px;
-      user-select: text;
-    }
-  </style>
-</head>
-<body>
-  <div id="chat-container">
-    <h2>Public Chat Room</h2>
+import os
+import eventlet
+eventlet.monkey_patch()
 
-    <div class="dropdown" id="dropdown">
-      <button id="dropdown-btn">Menu ▼</button>
-      <div class="dropdown-content">
-        <h4>Security</h4>
-        <p><code>/deletemessage &lt;number&gt;</code> - Delete last &lt;number&gt; messages</p>
-      </div>
-    </div>
+from flask import Flask, render_template, request, redirect, session, g, flash
+from flask_socketio import SocketIO, emit
+import sqlite3
 
-    <ul id="messages">
-      {% for id, username, message in messages %}
-        <li data-id="{{ id }}">
-          <strong>{{ username }}:</strong> {{ message }}
-          <span class="msg-id">[ID: {{ id }}]</span>
-        </li>
-      {% endfor %}
-    </ul>
+app = Flask(__name__)
+app.secret_key = 'your_secret_key'
+socketio = SocketIO(app, async_mode='eventlet')
 
-    <form id="chat-form">
-      <input type="text" id="username" placeholder="Your name (optional)">
-      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required>
-      <button type="submit">Send</button>
-    </form>
-  </div>
+DB_PATH = 'chat.db'
+locked = False
+LOCK_PASSWORD = "100005"
 
-<script>
-  const socket = io();
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(DB_PATH)
+    return g.db
 
-  socket.on('receive_message', data => {
-    const messages = document.getElementById('messages');
-    const li = document.createElement('li');
-    li.setAttribute('data-id', data.id);
-    li.innerHTML = `<strong>${data.username}:</strong> ${data.message} <span class="msg-id">[ID: ${data.id}]</span>`;
-    messages.appendChild(li);
-    messages.scrollTop = messages.scrollHeight;
-  });
+@app.teardown_appcontext
+def close_db(error):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
-  socket.on('messages_deleted', data => {
-    const deletedIds = data.deleted_ids;
-    deletedIds.forEach(id => {
-      const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
-      if (msgElem) msgElem.remove();
-    });
-  });
+def init_db():
+    db = get_db()
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            message TEXT NOT NULL
+        )
+    ''')
+    db.commit()
 
-  document.getElementById('chat-form').addEventListener('submit', e => {
-    e.preventDefault();
+@app.route('/')
+def index():
+    return redirect('/login')
 
-    const messageInput = document.getElementById('message');
-    const usernameInput = document.getElementById('username');
-    const message = messageInput.value.trim();
-    const username = usernameInput.value.trim() || 'anom';
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        password = request.form['password'].strip()
 
-    if (!message) return;
+        if password == 'pretzel':
+            session.clear()
+            session['authenticated'] = True
+            session['just_logged_in'] = True
+            return redirect('/chat')
 
-    if (message.startsWith('/deletemessage ')) {
-      const parts = message.split(' ');
-      const amount = parseInt(parts[1]);
-      if (!isNaN(amount) && amount > 0) {
-        socket.emit('delete_messages', { amount: amount });
-      }
-    } else {
-      socket.emit('send_message', { username: username, message: message });
-    }
+        elif password == 'emergency123':
+            db = get_db()
+            db.execute('DELETE FROM messages')
+            db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ('baybars', 'do we have any homework'))
+            db.commit()
 
-    messageInput.value = '';
-  });
+            session.clear()
+            session['authenticated'] = True
+            session['just_logged_in'] = True
 
-  const dropdownBtn = document.getElementById('dropdown-btn');
-  const dropdown = document.getElementById('dropdown');
-  dropdownBtn.addEventListener('click', () => {
-    dropdown.classList.toggle('show');
-  });
-  window.addEventListener('click', e => {
-    if (!dropdown.contains(e.target)) {
-      dropdown.classList.remove('show');
-    }
-  });
-</script>
-</body>
-</html>
+            flash('Emergency login: chat cleared and emergency message posted.', 'info')
+            return redirect('/chat')
+
+        else:
+            return render_template('login.html', error="Wrong password.")
+
+    return render_template('login.html')
+
+@app.route('/chat')
+def chat():
+    if not session.get('authenticated'):
+        return redirect('/login')
+    if session.get('just_logged_in') != True:
+        session.clear()
+        return redirect('/login')
+    session['just_logged_in'] = False
+
+    db = get_db()
+    cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
+    messages = cur.fetchall()
+    return render_template('index.html', messages=messages)
+
+@socketio.on('send_message')
+def handle_message(data):
+    global locked
+    username = data['username']
+    message = data['message'].strip()
+
+    if locked:
+        if message.startswith('/unlock '):
+            pw = message.split(' ', 1)[1]
+            if pw == LOCK_PASSWORD:
+                locked = False
+                emit('receive_message', {'id': None, 'username': 'System', 'message': 'Chat unlocked!'}, broadcast=True)
+            else:
+                emit('receive_message', {'id': None, 'username': 'System', 'message': 'Wrong unlock password.'}, room=request.sid)
+            return
+        else:
+            emit('receive_message', {'id': None, 'username': 'System', 'message': 'Chat is locked. Use /unlock <password> to unlock.'}, room=request.sid)
+            return
+
+    if message == '/lock':
+        emit('receive_message', {'id': None, 'username': 'System', 'message': 'Please type /lock <password> to lock the chat.'}, room=request.sid)
+        return
+
+    if message.startswith('/lock '):
+        pw = message.split(' ', 1)[1]
+        if pw == LOCK_PASSWORD:
+            locked = True
+            emit('receive_message', {'id': None, 'username': 'System', 'message': 'Chat locked! No one can send messages now.'}, broadcast=True)
+        else:
+            emit('receive_message', {'id': None, 'username': 'System', 'message': 'Wrong lock password.'}, room=request.sid)
+        return
+
+    db = get_db()
+    db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
+    db.commit()
+    msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    emit('receive_message', {'id': msg_id, 'username': username, 'message': message}, broadcast=True)
+
+@socketio.on('delete_messages')
+def delete_messages(data):
+    amount = int(data.get('amount', 0))
+    db = get_db()
+    cur = db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT ?', (amount,))
+    rows = cur.fetchall()
+    deleted_ids = [r[0] for r in rows]
+    db.executemany('DELETE FROM messages WHERE id=?', [(i,) for i in deleted_ids])
+    db.commit()
+    emit('messages_deleted', {'deleted_ids': deleted_ids}, broadcast=True)
+
+if __name__ == '__main__':
+    with app.app_context():
+        init_db()
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
