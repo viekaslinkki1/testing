@@ -1,40 +1,207 @@
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
-import uuid
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Public Chat Room</title>
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+      background: #f4f4f4;
+    }
+    #chat-container {
+      max-width: 700px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      height: 80vh;
+      position: relative;
+    }
+    #messages {
+      flex-grow: 1;
+      overflow-y: auto;
+      list-style: none;
+      padding: 0;
+      margin-bottom: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #fafafa;
+    }
+    #messages li {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+    }
+    #messages li:last-child {
+      border-bottom: none;
+    }
+    #chat-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #username {
+      width: 120px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+    }
+    #message {
+      flex-grow: 1;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+    }
+    button {
+      padding: 0 20px;
+      background-color: #007bff;
+      border: none;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      height: 40px;
+    }
+    .msg-id {
+      font-size: 0.8em;
+      color: #777;
+      margin-left: 10px;
+    }
+    .dropdown {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      user-select: none;
+    }
+    .dropdown > button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      right: 0;
+      background-color: white;
+      min-width: 220px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      border-radius: 4px;
+      padding: 12px 16px;
+      z-index: 1000;
+      font-size: 14px;
+      color: #333;
+    }
+    .dropdown.show .dropdown-content {
+      display: block;
+    }
+    .dropdown-content h4 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-weight: bold;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 4px;
+    }
+    .dropdown-content p {
+      margin: 6px 0;
+      font-family: monospace;
+      background: #f0f0f0;
+      padding: 6px 8px;
+      border-radius: 3px;
+      user-select: text;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <h2>Public Chat Room</h2>
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app)
+    <div class="dropdown" id="dropdown">
+      <button id="dropdown-btn">Menu ▼</button>
+      <div class="dropdown-content">
+        <h4>Security</h4>
+        <p><code>/deletemessage &lt;number&gt;</code> - Delete last &lt;number&gt; messages</p>
+      </div>
+    </div>
 
-# In-memory message store
-messages = []
+    <ul id="messages">
+      {% for id, username, message in messages %}
+        <li data-id="{{ id }}">
+          <strong>{{ username }}:</strong> {{ message }}
+          <span class="msg-id">[ID: {{ id }}]</span>
+        </li>
+      {% endfor %}
+    </ul>
 
-@app.route('/')
-def index():
-    return render_template('index.html', messages=messages)
+    <form id="chat-form">
+      <input type="text" id="username" placeholder="Your name (optional)">
+      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required>
+      <button type="submit">Send</button>
+    </form>
+  </div>
 
-@socketio.on('send_message')
-def handle_send_message(data):
-    username = data.get('username', 'anom')
-    message = data.get('message', '')
-    message_id = str(uuid.uuid4())[:8]  # Short 8-character ID
+<script>
+  const socket = io();
 
-    messages.append((message_id, username, message))
+  socket.on('receive_message', data => {
+    const messages = document.getElementById('messages');
+    const li = document.createElement('li');
+    li.setAttribute('data-id', data.id);
+    li.innerHTML = `<strong>${data.username}:</strong> ${data.message} <span class="msg-id">[ID: ${data.id}]</span>`;
+    messages.appendChild(li);
+    messages.scrollTop = messages.scrollHeight;
+  });
 
-    emit('receive_message', {
-        'id': message_id,
-        'username': username,
-        'message': message
-    }, broadcast=True)
+  socket.on('messages_deleted', data => {
+    const deletedIds = data.deleted_ids;
+    deletedIds.forEach(id => {
+      const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
+      if (msgElem) msgElem.remove();
+    });
+  });
 
-@socketio.on('delete_messages')
-def handle_delete_messages(data):
-    amount = int(data.get('amount', 0))
-    if amount > 0:
-        deleted = messages[-amount:]
-        deleted_ids = [msg[0] for msg in deleted]
-        del messages[-amount:]
-        emit('messages_deleted', { 'deleted_ids': deleted_ids }, broadcast=True)
+  document.getElementById('chat-form').addEventListener('submit', e => {
+    e.preventDefault();
 
-if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    const messageInput = document.getElementById('message');
+    const usernameInput = document.getElementById('username');
+    const message = messageInput.value.trim();
+    const username = usernameInput.value.trim() || 'anom';
+
+    if (!message) return;
+
+    if (message.startsWith('/deletemessage ')) {
+      const parts = message.split(' ');
+      const amount = parseInt(parts[1]);
+      if (!isNaN(amount) && amount > 0) {
+        socket.emit('delete_messages', { amount: amount });
+      }
+    } else {
+      socket.emit('send_message', { username: username, message: message });
+    }
+
+    messageInput.value = '';
+  });
+
+  const dropdownBtn = document.getElementById('dropdown-btn');
+  const dropdown = document.getElementById('dropdown');
+  dropdownBtn.addEventListener('click', () => {
+    dropdown.classList.toggle('show');
+  });
+  window.addEventListener('click', e => {
+    if (!dropdown.contains(e.target)) {
+      dropdown.classList.remove('show');
+    }
+  });
+</script>
+</body>
+</html>
