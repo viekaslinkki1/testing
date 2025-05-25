@@ -140,6 +140,14 @@
       right: 10px;
       bottom: 4px;
     }
+
+    #message-count {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 8px;
+      text-align: right;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -147,48 +155,72 @@
     <h2>Public Chat Room</h2>
 
     <div class="dropdown" id="dropdown">
-      <button id="dropdown-btn">Menu ▼</button>
-      <div class="dropdown-content">
+      <button id="dropdown-btn" aria-haspopup="true" aria-expanded="false">Menu ▼</button>
+      <div class="dropdown-content" role="menu" aria-label="Security menu">
         <h4>Security</h4>
         <p><code>/deletemessage &lt;number&gt;</code> - Delete last &lt;number&gt; messages</p>
         <p>Right-click message to copy its ID</p>
       </div>
     </div>
 
-    <ul id="messages">
-      {% for id, username, message in messages %}
-        <li data-id="{{ id }}">
-          <strong>{{ username }}</strong>: {{ message }}
-          <span class="msg-id">[ID: {{ id }}]</span>
-        </li>
-      {% endfor %}
-    </ul>
+    <div id="message-count">Messages: 0</div>
 
-    <form id="chat-form" autocomplete="off">
-      <input type="text" id="username" placeholder="Your name (optional)">
-      <input type="text" id="message" placeholder="Type your message" required>
-      <button type="submit">Send</button>
+    <ul id="messages" aria-live="polite" aria-relevant="additions"></ul>
+
+    <form id="chat-form" autocomplete="off" aria-label="Send message form">
+      <input type="text" id="username" placeholder="Your name (optional)" aria-label="Username">
+      <input type="text" id="message" placeholder="Type your message" required aria-label="Message input">
+      <button type="submit" aria-label="Send message">Send</button>
     </form>
   </div>
 
 <script>
   const socket = io();
 
-  socket.on('receive_message', data => {
-    const messages = document.getElementById('messages');
+  const messages = document.getElementById('messages');
+  const messageCountElem = document.getElementById('message-count');
+
+  // Update message count display
+  function updateMessageCount() {
+    messageCountElem.textContent = `Messages: ${messages.children.length}`;
+  }
+
+  // Escape HTML special characters
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function(m) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[m];
+    });
+  }
+
+  // Append a new message to the list and scroll down
+  function addMessage(data) {
     const li = document.createElement('li');
     li.setAttribute('data-id', data.id);
-    li.innerHTML = `<strong>${escapeHtml(data.username)}</strong>: ${escapeHtml(data.message)} <span class="msg-id">[ID: ${data.id}]</span>`;
+    li.innerHTML = `<strong>${escapeHtml(data.username)}</strong>: ${escapeHtml(data.message)} <span class="msg-id">[ID: ${escapeHtml(data.id)}]</span>`;
     messages.appendChild(li);
     messages.scrollTop = messages.scrollHeight;
+    updateMessageCount();
+  }
+
+  socket.on('receive_message', data => {
+    addMessage(data);
   });
 
   socket.on('messages_deleted', data => {
     const deletedIds = data.deleted_ids;
     deletedIds.forEach(id => {
       const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
-      if (msgElem) msgElem.remove();
+      if (msgElem) {
+        msgElem.remove();
+      }
     });
+    updateMessageCount();
   });
 
   document.getElementById('chat-form').addEventListener('submit', e => {
@@ -199,10 +231,7 @@
     const message = messageInput.value.trim();
     if (!message) return;
 
-    let username = usernameInput.value.trim();
-    if (!username) {
-      username = "anom";
-    }
+    let username = usernameInput.value.trim() || "anom";
 
     if (message.startsWith('/deletemessage ')) {
       const parts = message.split(' ');
@@ -215,45 +244,48 @@
     }
 
     messageInput.value = '';
+    messageInput.focus();
   });
 
-  // Dropdown menu toggle
+  // Allow sending message on Enter key in the message input
+  document.getElementById('message').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+    }
+  });
+
+  // Dropdown menu toggle with aria attributes
   const dropdownBtn = document.getElementById('dropdown-btn');
   const dropdown = document.getElementById('dropdown');
   dropdownBtn.addEventListener('click', () => {
-    dropdown.classList.toggle('show');
+    const isShown = dropdown.classList.toggle('show');
+    dropdownBtn.setAttribute('aria-expanded', isShown);
   });
 
   window.addEventListener('click', e => {
     if (!dropdown.contains(e.target)) {
       dropdown.classList.remove('show');
+      dropdownBtn.setAttribute('aria-expanded', false);
     }
   });
 
-  // Right-click to copy ID
-  document.getElementById('messages').addEventListener('contextmenu', function (e) {
+  // Right-click to copy message ID
+  messages.addEventListener('contextmenu', e => {
     e.preventDefault();
     const li = e.target.closest('li[data-id]');
     if (li) {
       const id = li.getAttribute('data-id');
-      navigator.clipboard.writeText(id).then(() => {
-        alert('Message ID copied to clipboard: ' + id);
-      });
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(id)
+          .then(() => alert(`Message ID copied: ${id}`))
+          .catch(() => alert('Failed to copy ID'));
+      } else {
+        alert(`Message ID: ${id}`);
+      }
     }
   });
 
-  // Simple HTML escaping to prevent injection
-  function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, function(m) {
-      return {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      }[m];
-    });
-  }
 </script>
 </body>
 </html>
