@@ -35,6 +35,7 @@
       padding: 8px 12px;
       border-bottom: 1px solid #eee;
       position: relative;
+      word-break: break-word;
     }
     #messages li:last-child {
       border-bottom: none;
@@ -163,9 +164,9 @@
       {% endfor %}
     </ul>
 
-    <form id="chat-form">
+    <form id="chat-form" autocomplete="off">
       <input type="text" id="username" placeholder="Your name (optional)">
-      <input type="text" id="message" placeholder="Type your message" autocomplete="off" required>
+      <input type="text" id="message" placeholder="Type your message" required>
       <button type="submit">Send</button>
     </form>
   </div>
@@ -177,7 +178,7 @@
     const messages = document.getElementById('messages');
     const li = document.createElement('li');
     li.setAttribute('data-id', data.id);
-    li.innerHTML = `<strong>${data.username}</strong>: ${data.message} <span class="msg-id">[ID: ${data.id}]</span>`;
+    li.innerHTML = `<strong>${escapeHtml(data.username)}</strong>: ${escapeHtml(data.message)} <span class="msg-id">[ID: ${data.id}]</span>`;
     messages.appendChild(li);
     messages.scrollTop = messages.scrollHeight;
   });
@@ -198,7 +199,10 @@
     const message = messageInput.value.trim();
     if (!message) return;
 
-    const username = usernameInput.value.trim() || "anom";
+    let username = usernameInput.value.trim();
+    if (!username) {
+      username = "anom";
+    }
 
     if (message.startsWith('/deletemessage ')) {
       const parts = message.split(' ');
@@ -237,6 +241,19 @@
       });
     }
   });
+
+  // Simple HTML escaping to prevent injection
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function(m) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[m];
+    });
+  }
 </script>
 </body>
 </html>
