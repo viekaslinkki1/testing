@@ -1,4 +1,5 @@
 import os
+import uuid
 import eventlet
 eventlet.monkey_patch()
 
@@ -8,15 +9,14 @@ import sqlite3
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app)
 
 DB_PATH = 'chat.db'
-locked = False
-LOCK_PASSWORD = "100005"
 
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
     return g.db
 
 @app.teardown_appcontext
@@ -31,7 +31,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
+            user_id TEXT NOT NULL,
             message TEXT NOT NULL
+        )
+    ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL
         )
     ''')
     db.commit()
@@ -43,27 +50,33 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        username = request.form['username'].strip()
         password = request.form['password'].strip()
 
-        if password == 'pretzel':
+        if password in ['pretzel', 'emergency123']:
             session.clear()
             session['authenticated'] = True
             session['just_logged_in'] = True
-            return redirect('/chat')
+            session['username'] = username
 
-        elif password == 'emergency123':
             db = get_db()
-            db.execute('DELETE FROM messages')
-            db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', ('baybars', 'do we have any homework'))
-            db.commit()
+            cur = db.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+            row = cur.fetchone()
+            if row:
+                session['user_id'] = row['user_id']
+            else:
+                user_id = str(uuid.uuid4())
+                db.execute('INSERT INTO users (username, user_id) VALUES (?, ?)', (username, user_id))
+                db.commit()
+                session['user_id'] = user_id
 
-            session.clear()
-            session['authenticated'] = True
-            session['just_logged_in'] = True
+            if password == 'emergency123':
+                db.execute('DELETE FROM messages')
+                db.execute('INSERT INTO messages (username, user_id, message) VALUES (?, ?, ?)', ('baybars', 'system', 'do we have any homework'))
+                db.commit()
+                flash('Emergency login: chat cleared and emergency message posted.', 'info')
 
-            flash('Emergency login: chat cleared and emergency message posted.', 'info')
             return redirect('/chat')
-
         else:
             return render_template('login.html', error="Wrong password.")
 
@@ -81,13 +94,17 @@ def chat():
     db = get_db()
     cur = db.execute('SELECT * FROM messages ORDER BY id ASC')
     messages = cur.fetchall()
-    return render_template('index.html', messages=messages)
+    return render_template('index.html', messages=messages, username=session['username'], user_id=session['user_id'])
+
+locked = False
+LOCK_PASSWORD = "100005"
 
 @socketio.on('send_message')
 def handle_message(data):
     global locked
-    username = data['username']
-    message = data['message'].strip()
+    username = data.get('username')
+    user_id = data.get('user_id')
+    message = data.get('message', '').strip()
 
     if locked:
         if message.startswith('/unlock '):
@@ -116,10 +133,10 @@ def handle_message(data):
         return
 
     db = get_db()
-    db.execute('INSERT INTO messages (username, message) VALUES (?, ?)', (username, message))
+    db.execute('INSERT INTO messages (username, user_id, message) VALUES (?, ?, ?)', (username, user_id, message))
     db.commit()
     msg_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-    emit('receive_message', {'id': msg_id, 'username': username, 'message': message}, broadcast=True)
+    emit('receive_message', {'id': msg_id, 'username': username, 'user_id': user_id, 'message': message}, broadcast=True)
 
 @socketio.on('delete_messages')
 def delete_messages(data):
@@ -127,7 +144,7 @@ def delete_messages(data):
     db = get_db()
     cur = db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT ?', (amount,))
     rows = cur.fetchall()
-    deleted_ids = [r[0] for r in rows]
+    deleted_ids = [r['id'] for r in rows]
     db.executemany('DELETE FROM messages WHERE id=?', [(i,) for i in deleted_ids])
     db.commit()
     emit('messages_deleted', {'deleted_ids': deleted_ids}, broadcast=True)
