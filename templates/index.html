@@ -160,69 +160,69 @@
     </form>
   </div>
 
-<script>
-  const socket = io();
+  <script>
+    const socket = io();
 
-  // Handle receiving messages
-  socket.on('receive_message', data => {
-    const messages = document.getElementById('messages');
-    const li = document.createElement('li');
-    li.setAttribute('data-id', data.id);
-    li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
-    messages.appendChild(li);
-    messages.scrollTop = messages.scrollHeight;
-  });
+    // Handle receiving messages
+    socket.on('receive_message', data => {
+      const messages = document.getElementById('messages');
+      const li = document.createElement('li');
+      li.setAttribute('data-id', data.id);
+      li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
+      messages.appendChild(li);
+      messages.scrollTop = messages.scrollHeight;
+    });
 
-  // Handle message deletions
-  socket.on('messages_deleted', data => {
-    const deletedIds = data.deleted_ids;
-    deletedIds.forEach(id => {
-      const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
-      if (msgElem) {
-        msgElem.remove();
+    // Handle message deletions
+    socket.on('messages_deleted', data => {
+      const deletedIds = data.deleted_ids;
+      deletedIds.forEach(id => {
+        const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
+        if (msgElem) {
+          msgElem.remove();
+        }
+      });
+    });
+
+    // Submit new message
+    document.getElementById('chat-form').addEventListener('submit', e => {
+      e.preventDefault();
+
+      const messageInput = document.getElementById('message');
+      const usernameInput = document.getElementById('username');
+
+      const message = messageInput.value.trim();
+      if (!message) return;
+
+      const username = usernameInput.value.trim() || "anom";
+
+      // Command handling
+      if (message.startsWith('/deletemessage ')) {
+        const parts = message.split(' ');
+        const amount = parseInt(parts[1]);
+        if (!isNaN(amount) && amount > 0) {
+          socket.emit('delete_messages', { amount: amount });
+        }
+      } else {
+        socket.emit('send_message', { username: username, message: message });
+      }
+
+      messageInput.value = '';
+    });
+
+    // Dropdown toggle
+    const dropdownBtn = document.getElementById('dropdown-btn');
+    const dropdown = document.getElementById('dropdown');
+    dropdownBtn.addEventListener('click', () => {
+      dropdown.classList.toggle('show');
+    });
+
+    // Close dropdown if clicked outside
+    window.addEventListener('click', e => {
+      if (!dropdown.contains(e.target)) {
+        dropdown.classList.remove('show');
       }
     });
-  });
-
-  // Submit new message
-  document.getElementById('chat-form').addEventListener('submit', e => {
-    e.preventDefault();
-
-    const messageInput = document.getElementById('message');
-    const usernameInput = document.getElementById('username');
-
-    const message = messageInput.value.trim();
-    if (!message) return;
-
-    const username = usernameInput.value.trim() || "anom";
-
-    // Check if message is a command
-    if (message.startsWith('/deletemessage ')) {
-      const parts = message.split(' ');
-      const amount = parseInt(parts[1]);
-      if (!isNaN(amount) && amount > 0) {
-        socket.emit('delete_messages', { amount: amount });
-      }
-    } else {
-      socket.emit('send_message', { username: username, message: message });
-    }
-
-    messageInput.value = '';
-  });
-
-  // Dropdown menu toggle
-  const dropdownBtn = document.getElementById('dropdown-btn');
-  const dropdown = document.getElementById('dropdown');
-  dropdownBtn.addEventListener('click', () => {
-    dropdown.classList.toggle('show');
-  });
-
-  // Close dropdown if clicked outside
-  window.addEventListener('click', e => {
-    if (!dropdown.contains(e.target)) {
-      dropdown.classList.remove('show');
-    }
-  });
-</script>
+  </script>
 </body>
 </html>
