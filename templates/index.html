@@ -34,6 +34,7 @@
     #messages li {
       padding: 8px 12px;
       border-bottom: 1px solid #eee;
+      position: relative;
     }
     #messages li:last-child {
       border-bottom: none;
@@ -80,7 +81,6 @@
       background-color: #0056b3;
     }
 
-    /* Dropdown menu styles */
     .dropdown {
       position: absolute;
       top: 20px;
@@ -132,24 +132,34 @@
       border-radius: 3px;
       user-select: text;
     }
+    .msg-id {
+      font-size: 11px;
+      color: #888;
+      position: absolute;
+      right: 10px;
+      bottom: 4px;
+    }
   </style>
 </head>
 <body>
   <div id="chat-container">
     <h2>Public Chat Room</h2>
 
-    <!-- Dropdown menu -->
     <div class="dropdown" id="dropdown">
       <button id="dropdown-btn">Menu ▼</button>
       <div class="dropdown-content">
         <h4>Security</h4>
         <p><code>/deletemessage &lt;number&gt;</code> - Delete last &lt;number&gt; messages</p>
+        <p>Right-click message to copy its ID</p>
       </div>
     </div>
 
     <ul id="messages">
       {% for id, username, message in messages %}
-        <li data-id="{{ id }}"><strong>{{ username }}:</strong> {{ message }}</li>
+        <li data-id="{{ id }}">
+          <strong>{{ username }}</strong>: {{ message }}
+          <span class="msg-id">[ID: {{ id }}]</span>
+        </li>
       {% endfor %}
     </ul>
 
@@ -160,69 +170,73 @@
     </form>
   </div>
 
-  <script>
-    const socket = io();
+<script>
+  const socket = io();
 
-    // Handle receiving messages
-    socket.on('receive_message', data => {
-      const messages = document.getElementById('messages');
-      const li = document.createElement('li');
-      li.setAttribute('data-id', data.id);
-      li.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
-      messages.appendChild(li);
-      messages.scrollTop = messages.scrollHeight;
+  socket.on('receive_message', data => {
+    const messages = document.getElementById('messages');
+    const li = document.createElement('li');
+    li.setAttribute('data-id', data.id);
+    li.innerHTML = `<strong>${data.username}</strong>: ${data.message} <span class="msg-id">[ID: ${data.id}]</span>`;
+    messages.appendChild(li);
+    messages.scrollTop = messages.scrollHeight;
+  });
+
+  socket.on('messages_deleted', data => {
+    const deletedIds = data.deleted_ids;
+    deletedIds.forEach(id => {
+      const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
+      if (msgElem) msgElem.remove();
     });
+  });
 
-    // Handle message deletions
-    socket.on('messages_deleted', data => {
-      const deletedIds = data.deleted_ids;
-      deletedIds.forEach(id => {
-        const msgElem = document.querySelector(`#messages li[data-id='${id}']`);
-        if (msgElem) {
-          msgElem.remove();
-        }
+  document.getElementById('chat-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const messageInput = document.getElementById('message');
+    const usernameInput = document.getElementById('username');
+
+    const message = messageInput.value.trim();
+    if (!message) return;
+
+    const username = usernameInput.value.trim() || "anom";
+
+    if (message.startsWith('/deletemessage ')) {
+      const parts = message.split(' ');
+      const amount = parseInt(parts[1]);
+      if (!isNaN(amount) && amount > 0) {
+        socket.emit('delete_messages', { amount: amount });
+      }
+    } else {
+      socket.emit('send_message', { username: username, message: message });
+    }
+
+    messageInput.value = '';
+  });
+
+  // Dropdown menu toggle
+  const dropdownBtn = document.getElementById('dropdown-btn');
+  const dropdown = document.getElementById('dropdown');
+  dropdownBtn.addEventListener('click', () => {
+    dropdown.classList.toggle('show');
+  });
+
+  window.addEventListener('click', e => {
+    if (!dropdown.contains(e.target)) {
+      dropdown.classList.remove('show');
+    }
+  });
+
+  // Right-click to copy ID
+  document.getElementById('messages').addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    const li = e.target.closest('li[data-id]');
+    if (li) {
+      const id = li.getAttribute('data-id');
+      navigator.clipboard.writeText(id).then(() => {
+        alert('Message ID copied to clipboard: ' + id);
       });
-    });
-
-    // Submit new message
-    document.getElementById('chat-form').addEventListener('submit', e => {
-      e.preventDefault();
-
-      const messageInput = document.getElementById('message');
-      const usernameInput = document.getElementById('username');
-
-      const message = messageInput.value.trim();
-      if (!message) return;
-
-      const username = usernameInput.value.trim() || "anom";
-
-      // Command handling
-      if (message.startsWith('/deletemessage ')) {
-        const parts = message.split(' ');
-        const amount = parseInt(parts[1]);
-        if (!isNaN(amount) && amount > 0) {
-          socket.emit('delete_messages', { amount: amount });
-        }
-      } else {
-        socket.emit('send_message', { username: username, message: message });
-      }
-
-      messageInput.value = '';
-    });
-
-    // Dropdown toggle
-    const dropdownBtn = document.getElementById('dropdown-btn');
-    const dropdown = document.getElementById('dropdown');
-    dropdownBtn.addEventListener('click', () => {
-      dropdown.classList.toggle('show');
-    });
-
-    // Close dropdown if clicked outside
-    window.addEventListener('click', e => {
-      if (!dropdown.contains(e.target)) {
-        dropdown.classList.remove('show');
-      }
-    });
-  </script>
+    }
+  });
+</script>
 </body>
 </html>
