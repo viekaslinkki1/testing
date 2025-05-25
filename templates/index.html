@@ -165,11 +165,20 @@
 
     <div id="message-count">Messages: 0</div>
 
-    <ul id="messages" aria-live="polite" aria-relevant="additions"></ul>
+    <ul id="messages" aria-live="polite" aria-relevant="additions">
+      {% for msg in messages %}
+        <li data-id="{{ msg.id|e }}">
+          <strong>{{ msg.username|e }}</strong>: {{ msg.message|e }}
+          <span class="msg-id">[ID: {{ msg.id|e }}]</span>
+        </li>
+      {% endfor %}
+    </ul>
 
     <form id="chat-form" autocomplete="off" aria-label="Send message form">
-      <input type="text" id="username" placeholder="Your name (optional)" aria-label="Username">
-      <input type="text" id="message" placeholder="Type your message" required aria-label="Message input">
+      <!-- Username is prefilled and readonly -->
+      <input type="text" id="username" aria-label="Username" value="{{ username|e }}" readonly />
+      <input type="hidden" id="user_id" value="{{ user_id|e }}" />
+      <input type="text" id="message" placeholder="Type your message" required aria-label="Message input" autofocus />
       <button type="submit" aria-label="Send message">Send</button>
     </form>
   </div>
@@ -209,7 +218,18 @@
   }
 
   socket.on('receive_message', data => {
-    addMessage(data);
+    if(data.id !== null) {
+      addMessage(data);
+    } else {
+      // System messages
+      const li = document.createElement('li');
+      li.style.fontStyle = 'italic';
+      li.style.color = '#555';
+      li.textContent = `${data.username}: ${data.message}`;
+      messages.appendChild(li);
+      messages.scrollTop = messages.scrollHeight;
+      updateMessageCount();
+    }
   });
 
   socket.on('messages_deleted', data => {
@@ -227,11 +247,13 @@
     e.preventDefault();
     const messageInput = document.getElementById('message');
     const usernameInput = document.getElementById('username');
+    const userIdInput = document.getElementById('user_id');
 
     const message = messageInput.value.trim();
     if (!message) return;
 
     let username = usernameInput.value.trim() || "anom";
+    let user_id = userIdInput.value || "anon_id";
 
     if (message.startsWith('/deletemessage ')) {
       const parts = message.split(' ');
@@ -240,52 +262,34 @@
         socket.emit('delete_messages', { amount: amount });
       }
     } else {
-      socket.emit('send_message', { username: username, message: message });
+      socket.emit('send_message', { username: username, user_id: user_id, message: message });
     }
 
     messageInput.value = '';
     messageInput.focus();
   });
 
-  // Allow sending message on Enter key in the message input
-  document.getElementById('message').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      document.getElementById('chat-form').dispatchEvent(new Event('submit'));
-    }
-  });
-
-  // Dropdown menu toggle with aria attributes
-  const dropdownBtn = document.getElementById('dropdown-btn');
+  // Dropdown menu toggle
   const dropdown = document.getElementById('dropdown');
+  const dropdownBtn = document.getElementById('dropdown-btn');
   dropdownBtn.addEventListener('click', () => {
-    const isShown = dropdown.classList.toggle('show');
-    dropdownBtn.setAttribute('aria-expanded', isShown);
+    dropdown.classList.toggle('show');
+    const expanded = dropdownBtn.getAttribute('aria-expanded') === 'true';
+    dropdownBtn.setAttribute('aria-expanded', !expanded);
   });
 
-  window.addEventListener('click', e => {
-    if (!dropdown.contains(e.target)) {
-      dropdown.classList.remove('show');
-      dropdownBtn.setAttribute('aria-expanded', false);
-    }
-  });
-
-  // Right-click to copy message ID
-  messages.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    const li = e.target.closest('li[data-id]');
-    if (li) {
-      const id = li.getAttribute('data-id');
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(id)
-          .then(() => alert(`Message ID copied: ${id}`))
-          .catch(() => alert('Failed to copy ID'));
-      } else {
-        alert(`Message ID: ${id}`);
+  // Close dropdown if clicked outside
+  window.onclick = function(event) {
+    if (!event.target.matches('#dropdown-btn')) {
+      if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+        dropdownBtn.setAttribute('aria-expanded', 'false');
       }
     }
-  });
+  };
 
+  updateMessageCount();
+  messages.scrollTop = messages.scrollHeight;
 </script>
 </body>
 </html>
